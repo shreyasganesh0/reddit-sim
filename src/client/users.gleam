@@ -59,6 +59,7 @@ fn init(
         let ret = actor.initialised(init_state)
         |> actor.returning(TestMessage)
 
+        process.send(sub, TestMessage)
         Ok(ret)
 }
 
