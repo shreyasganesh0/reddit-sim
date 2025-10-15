@@ -1,6 +1,5 @@
 import gleam/io
 import gleam/int
-import gleam/result
 import argv
 
 import client/users

@@ -1,4 +1,7 @@
 import gleam/io
+import gleam/dict
+import gleam/crypto
+import gleam/bit_array
 
 import gleam/otp/actor
 import gleam/otp/static_supervisor as supervisor
@@ -6,14 +9,19 @@ import gleam/otp/supervision
 
 import gleam/erlang/process
 
+import youid/uuid
+
 import types 
 
 pub fn create() -> Nil {
+
+    let main_sub = process.new_subject()
 
     let _ = supervisor.new(supervisor.OneForOne)
     |> supervisor.add(supervision.worker(fn() {start()}))
     |> supervisor.start
 
+    process.receive_forever(main_sub)
     Nil
 }
 
@@ -30,6 +38,7 @@ fn init(
 
     let init_state = types.EngineState(
                         self_sub: sub,
+                        usermap: dict.new(),
                      )
 
     let ret = actor.initialised(init_state)
@@ -51,6 +60,40 @@ fn handle_engine(
 
             io.println("Started types.Engine...")
             actor.continue(state)
+        }
+
+        types.RegisterUser(send_sub, username, password) -> {
+
+            case dict.has_key(state.usermap, username) {
+
+
+                True -> {
+
+                    process.send(send_sub, types.RegisterFailed)
+                    actor.continue(state)
+                }
+
+                False -> {
+
+                    let uid = uuid.v4_string()
+
+                    let passbits =  bit_array.from_string(password)
+                    let passhash = crypto.new_hasher(crypto.Sha512)
+                    |> crypto.hash_chunk(passbits)
+                    |> crypto.digest
+
+                    let new_state = types.EngineState(
+                                        ..state,
+                                        usermap: dict.insert(
+                                                    state.usermap,
+                                                    username,
+                                                    #(uid, passhash),
+                                                 )
+                                    )
+                    process.send(send_sub, types.RegisterSuccess(uid))
+                    actor.continue(new_state)
+                }
+            }
         }
     }
 }

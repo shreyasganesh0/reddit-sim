@@ -12,6 +12,8 @@ import types
 
 pub fn create(num_users: Int) -> Nil {
 
+    let main_sub = process.new_subject()
+
     let builder = supervisor.new(supervisor.OneForOne)
     let builder = list.range(1, num_users) 
     |> list.fold(builder, fn(acc, a) {
@@ -22,6 +24,7 @@ pub fn create(num_users: Int) -> Nil {
 
     let _ = supervisor.start(builder)
 
+    process.receive_forever(main_sub)
     Nil
 }
 
@@ -62,6 +65,18 @@ fn handle_user(
         types.UserTestMessage -> {
 
             io.println("Entered client " <> int.to_string(state.id))
+            actor.continue(state)
+        }
+
+        types.RegisterFailed -> {
+
+            io.println("User id taken.. try another")
+            actor.continue(state)
+        }
+
+        types.RegisterSuccess(uuid) -> {
+
+            io.println("[CLIENT]: registered client with uuid: " <> uuid)
             actor.continue(state)
         }
     }
