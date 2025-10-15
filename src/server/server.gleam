@@ -1,5 +1,6 @@
+import server/engine
+
 pub fn main() -> Nil {
 
-
-    Nil
+    engine.create()
 }

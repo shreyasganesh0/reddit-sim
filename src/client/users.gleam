@@ -8,25 +8,14 @@ import gleam/otp/supervision
 
 import gleam/erlang/process
 
-type UserMessage {
-
-    TestMessage
-}
-
-type UserState {
-
-    UserState(
-        id: Int,
-        self_sub: process.Subject(UserMessage)
-    )
-}
+import types
 
 pub fn create(num_users: Int) -> Nil {
 
     let builder = supervisor.new(supervisor.OneForOne)
     let builder = list.range(1, num_users) 
     |> list.fold(builder, fn(acc, a) {
-                            let res = create_actor(a)
+                            let res = start(a)
                             supervisor.add(acc, supervision.worker(fn() {res}))
                           }
         )
@@ -36,9 +25,9 @@ pub fn create(num_users: Int) -> Nil {
     Nil
 }
 
-fn create_actor(
+fn start(
     id: Int,
-    ) -> actor.StartResult(UserMessage) {
+    ) -> actor.StartResult(types.UserMessage) {
 
     actor.new_with_initialiser(1000, fn(sub) {init(sub, id)})
     |> actor.on_message(handle_user)
@@ -46,33 +35,33 @@ fn create_actor(
 }
 
 fn init(
-    sub: process.Subject(UserMessage),
+    sub: process.Subject(types.UserMessage),
     id: Int
-    ) -> Result(actor.Initialised(UserState, UserMessage, UserMessage), String) {
+    ) -> Result(actor.Initialised(types.UserState, types.UserMessage, types.UserMessage), String) {
 
 
-        let init_state = UserState(
+        let init_state = types.UserState(
                             id: id,
                             self_sub: sub
                          )
 
         let ret = actor.initialised(init_state)
-        |> actor.returning(TestMessage)
+        |> actor.returning(types.UserTestMessage)
 
-        process.send(sub, TestMessage)
+        process.send(sub, types.UserTestMessage)
         Ok(ret)
 }
 
 fn handle_user(
-    state: UserState,
-    msg: UserMessage
-    ) -> actor.Next(UserState, UserMessage) {
+    state: types.UserState,
+    msg: types.UserMessage
+    ) -> actor.Next(types.UserState, types.UserMessage) {
 
     case msg {
 
-        TestMessage -> {
+        types.UserTestMessage -> {
 
-            io.println("Entered actor " <> int.to_string(state.id))
+            io.println("Entered client " <> int.to_string(state.id))
             actor.continue(state)
         }
     }
