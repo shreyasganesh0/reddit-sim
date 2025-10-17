@@ -15,12 +15,11 @@ import youid/uuid
 import types 
 
 @external(erlang, "global", "register_name")
-fn global_register(name: atom.Atom, pid: process.Pid) -> Bool
+fn global_register(name: atom.Atom, pid: process.Pid) -> atom.Atom 
 
 pub fn create() -> Nil {
 
     let main_sub = process.new_subject()
-
     let _ = supervisor.new(supervisor.OneForOne)
     |> supervisor.add(supervision.worker(fn() {start()}))
     |> supervisor.start
@@ -45,19 +44,23 @@ fn init(
                         usermap: dict.new(),
                      )
 
+    let engine_atom = atom.create("engine")
+    let yes_atom = atom.create("yes")
     let assert Ok(pid) = process.subject_owner(sub)
-    case atom.create("engine")
-    |> global_register(pid) {
+    case engine_atom 
+    |> global_register(pid) == yes_atom {
 
         True -> {
 
             io.println("successfully registered")
         }
 
+        
         False -> {
 
             io.println("failed register of global name")
         }
+        
     }
 
     let ret = actor.initialised(init_state)
@@ -77,7 +80,7 @@ fn handle_engine(
 
         types.EngineTestMessage -> {
 
-            io.println("Started types.Engine...")
+            io.println("Started Engine...")
             actor.continue(state)
         }
 

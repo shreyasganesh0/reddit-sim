@@ -45,7 +45,7 @@ fn start(
     engine_node: atom.Atom
     ) -> actor.StartResult(types.UserMessage) {
 
-    actor.new_with_initialiser(1000, fn(sub) {init(sub, id, engine_atom, engine_node)})
+    actor.new_with_initialiser(100000, fn(sub) {init(sub, id, engine_atom, engine_node)})
     |> actor.on_message(handle_user)
     |> actor.start
 }
@@ -76,8 +76,9 @@ fn init(
 
         }
 
+        process.sleep(1000)
         let assert Ok(def_pid) = process.subject_owner(sub)
-        let pid = case  global_whereisname(engine_atom) 
+        let pid = case global_whereisname(engine_atom) 
         |> decode.run(decode.new_primitive_decoder("Pid", fn(data) {utls.pid_decoder(def_pid, data)}))
 
         {
