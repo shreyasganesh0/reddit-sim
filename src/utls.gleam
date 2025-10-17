@@ -1,28 +1,17 @@
 import gleam/erlang/process
 import gleam/dynamic
-import gleam/io
+import gleam/list
 
-@external(erlang, "erlang", "is_pid")
-fn is_pid(pid: dynamic.Dynamic) -> Bool 
-
-@external(erlang, "gleam_stdlib", "identity")
-fn unsafe_coerce(a: a) -> b
-
-pub fn pid_decoder(default_pid: process.Pid, data: dynamic.Dynamic) -> Result(process.Pid, process.Pid) {
+pub fn create_selector(
+    selector: process.Selector(payload),
+    selector_tags: List(#(String, fn(dynamic.Dynamic) -> payload, Int))
+    ) -> process.Selector(payload) {
 
 
-    case is_pid(data) {
+        list.fold(selector_tags, selector, fn(acc, a) {
 
-        True -> {
-
-            let pid: process.Pid = unsafe_coerce(data)
-            Ok(pid)
-        }
-
-        False -> { 
-            
-            io.println("fail pid check")
-            Error(default_pid)
-        }
-    }
+                                               let #(tag, decoder, arity) = a
+                                               process.select_record(acc, tag, arity, decoder)
+                                           }
+        )
 }

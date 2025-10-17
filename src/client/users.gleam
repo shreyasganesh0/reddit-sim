@@ -13,11 +13,15 @@ import gleam/erlang/atom
 import gleam/erlang/node
 
 import types
-import utls
 
 @external(erlang, "global", "whereis_name")
 fn global_whereisname(name: atom.Atom) -> dynamic.Dynamic 
 
+@external(erlang, "global", "send")
+fn global_send(name: atom.Atom, msg: dynamic.Dynamic) -> process.Pid 
+
+@external(erlang, "erlang", "self")
+fn self() -> process.Pid
 
 pub fn create(num_users: Int) -> Nil {
 
@@ -77,9 +81,8 @@ fn init(
         }
 
         process.sleep(1000)
-        let assert Ok(def_pid) = process.subject_owner(sub)
         let pid = case global_whereisname(engine_atom) 
-        |> decode.run(decode.new_primitive_decoder("Pid", fn(data) {utls.pid_decoder(def_pid, data)}))
+        |> decode.run(decode.new_primitive_decoder("Pid", types.pid_decode))
 
         {
 
@@ -99,7 +102,9 @@ fn init(
         let init_state = types.UserState(
                             id: id,
                             self_sub: sub,
-                            engine_pid: pid
+                            engine_pid: pid,
+                            engine_atom: engine_atom,
+                            user_name: "user_" <> int.to_string(id)
                          )
         let ret = actor.initialised(init_state)
         |> actor.returning(types.UserTestMessage)
@@ -117,7 +122,11 @@ fn handle_user(
 
         types.UserTestMessage -> {
 
-            io.println("Entered client " <> int.to_string(state.id))
+            io.println("[CLIENT]: Entered client sending register user" <> int.to_string(state.id))
+            global_send(state.engine_atom, types.unsafe_coerce(
+                                            #("register_user", self(), state.user_name, "test_pwd")
+                                           )
+            )
             actor.continue(state)
         }
 

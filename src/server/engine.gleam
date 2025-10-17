@@ -13,6 +13,7 @@ import gleam/erlang/atom
 import youid/uuid
 
 import types 
+import utls
 
 @external(erlang, "global", "register_name")
 fn global_register(name: atom.Atom, pid: process.Pid) -> atom.Atom 
@@ -63,8 +64,14 @@ fn init(
         
     }
 
+    let selector = process.new_selector() 
+    let selector_tag_list = [#("register_user", types.register_user_decoder, 3)]
+
+    let selector = utls.create_selector(selector, selector_tag_list)
+
     let ret = actor.initialised(init_state)
     |> actor.returning(types.EngineTestMessage)
+    |> actor.selecting(selector)
 
     process.send(sub, types.EngineTestMessage)
 
@@ -84,14 +91,16 @@ fn handle_engine(
             actor.continue(state)
         }
 
-        types.RegisterUser(send_sub, username, password) -> {
+        types.RegisterUser(_send_pid, username, password) -> {
+
+            io.println("[ENGINE]: recvd register user msg")
 
             case dict.has_key(state.usermap, username) {
 
 
                 True -> {
 
-                    process.send(send_sub, types.RegisterFailed)
+                    //process.send(send_sub, types.RegisterFailed)
                     actor.continue(state)
                 }
 
@@ -112,7 +121,7 @@ fn handle_engine(
                                                     #(uid, passhash),
                                                  )
                                     )
-                    process.send(send_sub, types.RegisterSuccess(uid))
+                    //process.send(send_sub, types.RegisterSuccess(uid))
                     actor.continue(new_state)
                 }
             }
