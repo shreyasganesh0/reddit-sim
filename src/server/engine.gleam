@@ -8,10 +8,14 @@ import gleam/otp/static_supervisor as supervisor
 import gleam/otp/supervision 
 
 import gleam/erlang/process
+import gleam/erlang/atom
 
 import youid/uuid
 
 import types 
+
+@external(erlang, "global", "register_name")
+fn global_register(name: atom.Atom, pid: process.Pid) -> Bool
 
 pub fn create() -> Nil {
 
@@ -40,6 +44,21 @@ fn init(
                         self_sub: sub,
                         usermap: dict.new(),
                      )
+
+    let assert Ok(pid) = process.subject_owner(sub)
+    case atom.create("engine")
+    |> global_register(pid) {
+
+        True -> {
+
+            io.println("successfully registered")
+        }
+
+        False -> {
+
+            io.println("failed register of global name")
+        }
+    }
 
     let ret = actor.initialised(init_state)
     |> actor.returning(types.EngineTestMessage)

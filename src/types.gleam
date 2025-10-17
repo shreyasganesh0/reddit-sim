@@ -15,7 +15,8 @@ pub type UserState {
 
     UserState(
         id: Int,
-        self_sub: process.Subject(UserMessage)
+        self_sub: process.Subject(UserMessage),
+        engine_pid: process.Pid
     )
 }
 

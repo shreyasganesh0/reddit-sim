@@ -3,6 +3,7 @@ import gleam/int
 import argv
 
 import client/users
+import server/engine
 
 type ArgsError {
 
@@ -11,26 +12,68 @@ type ArgsError {
     WrongArgCount(required: Int)
 }
 
+type BuildType {
+
+    Server
+
+    Client
+}
+
 pub fn main() -> Nil {
 
     let res = case argv.load().arguments {
 
-        [numusers] -> {
+        [build_type] -> {
 
-            case int.parse(numusers) {
+            case build_type {
 
-                Ok(users) -> {
+                "server" -> {
 
-                    case users >= 1 {
+                    Ok(#(Server, 0))
+                }
 
-                        True -> Ok(users)
+                "client" -> {
 
-                        False -> Error(InvalidArgs)  
+                    io.println("Invalid use of client type, Usage: gleam run client numUsers") 
+                    Error(InvalidArgs)
+                }
+
+                _ -> {
+
+                    io.println("Invalid build type, Usage: gleam run [server|client] [numUsers]")
+                    Error(InvalidArgs)
+                }
+            }
+        }
+
+        [build_type, numusers] -> {
+
+            case build_type {
+
+                "client" -> {
+
+                    case int.parse(numusers) {
+
+                        Ok(users) -> {
+
+                            case users >= 1 {
+
+                                True -> Ok(#(Client, users))
+
+                                False -> Error(InvalidArgs)  
+                            }
+                        }
+
+                        Error(_) -> { 
+
+                            Error(InvalidArgs)
+                        }
                     }
                 }
 
-                Error(_) -> { 
+                _ -> {
 
+                    io.println("Invalid build type, Usage: gleam run [server|client] [numUsers]")
                     Error(InvalidArgs)
                 }
             }
@@ -44,9 +87,21 @@ pub fn main() -> Nil {
 
     case res {
 
-        Ok(num_users) -> {
+        Ok(#(build_type, num_users)) -> {
 
-            users.create(num_users)
+            case build_type {
+
+                Server -> {
+
+                    engine.create()
+                }
+
+                Client -> {
+
+                    users.create(num_users)
+                }
+            }
+
         }
 
         Error(err) -> {
