@@ -120,11 +120,23 @@ fn init(
         |> actor.returning(types.UserTestMessage)
         |> actor.selecting(selector)
 
-        global_send(engine_atom, utls.unsafe_coerce(
-                                        #("register_user", self(), init_state.user_name, "test_pwd")
-                                       )
-        )
+        send(#("register_user", self(), init_state.user_name, "test_pwd"))
+
         Ok(ret)
+}
+
+fn send(tup: a) -> process.Pid {
+    case atom.get("engine") {
+
+            Ok(engine_atom) -> {
+                global_send(engine_atom, utls.unsafe_coerce(tup)) 
+            }
+
+            Error(_) -> {
+
+                panic as "[CLIENT]: failed to get engine atom in send"
+            }
+    }
 }
 
 fn handle_user(
