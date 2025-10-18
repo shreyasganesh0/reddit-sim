@@ -2,6 +2,7 @@ import gleam/io
 import gleam/dict
 import gleam/crypto
 import gleam/bit_array
+//import gleam/dynamic
 
 import gleam/otp/actor
 import gleam/otp/static_supervisor as supervisor
@@ -17,6 +18,7 @@ import utls
 
 @external(erlang, "global", "register_name")
 fn global_register(name: atom.Atom, pid: process.Pid) -> atom.Atom 
+
 
 pub fn create() -> Nil {
 
@@ -73,8 +75,6 @@ fn init(
     |> actor.returning(types.EngineTestMessage)
     |> actor.selecting(selector)
 
-    process.send(sub, types.EngineTestMessage)
-
     Ok(ret)
 }
 
@@ -91,16 +91,16 @@ fn handle_engine(
             actor.continue(state)
         }
 
-        types.RegisterUser(_send_pid, username, password) -> {
+        types.RegisterUser(send_pid, username, password) -> {
 
-            io.println("[ENGINE]: recvd register user msg")
+            io.println("[ENGINE]: recvd register user msg username: " <> username <> " password: "<> password)
 
             case dict.has_key(state.usermap, username) {
-
 
                 True -> {
 
                     //process.send(send_sub, types.RegisterFailed)
+                    utls.pid_send(send_pid, utls.unsafe_coerce(#("register_failed")))
                     actor.continue(state)
                 }
 
@@ -122,6 +122,7 @@ fn handle_engine(
                                                  )
                                     )
                     //process.send(send_sub, types.RegisterSuccess(uid))
+                    utls.pid_send(send_pid, utls.unsafe_coerce(#("register_success", uid)))
                     actor.continue(new_state)
                 }
             }

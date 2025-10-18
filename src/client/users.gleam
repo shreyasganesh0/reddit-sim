@@ -13,6 +13,7 @@ import gleam/erlang/atom
 import gleam/erlang/node
 
 import types
+import utls
 
 @external(erlang, "global", "whereis_name")
 fn global_whereisname(name: atom.Atom) -> dynamic.Dynamic 
@@ -106,10 +107,23 @@ fn init(
                             engine_atom: engine_atom,
                             user_name: "user_" <> int.to_string(id)
                          )
+
+        let selector = process.new_selector() 
+        let selector_tag_list = [
+                                #("register_failed", types.register_failed_decoder, 0),
+                                #("register_success", types.register_success_decoder, 1),
+                                ]
+
+        let selector = utls.create_selector(selector, selector_tag_list)
+
         let ret = actor.initialised(init_state)
         |> actor.returning(types.UserTestMessage)
+        |> actor.selecting(selector)
 
-        process.send(sub, types.UserTestMessage)
+        global_send(engine_atom, utls.unsafe_coerce(
+                                        #("register_user", self(), init_state.user_name, "test_pwd")
+                                       )
+        )
         Ok(ret)
 }
 
@@ -123,10 +137,6 @@ fn handle_user(
         types.UserTestMessage -> {
 
             io.println("[CLIENT]: Entered client sending register user" <> int.to_string(state.id))
-            global_send(state.engine_atom, types.unsafe_coerce(
-                                            #("register_user", self(), state.user_name, "test_pwd")
-                                           )
-            )
             actor.continue(state)
         }
 

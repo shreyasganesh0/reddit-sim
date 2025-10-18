@@ -8,6 +8,8 @@ import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/erlang/atom
 
+import utls
+
 pub type UserMessage {
 
     UserTestMessage
@@ -47,9 +49,6 @@ pub type EngineState {
 @external(erlang, "erlang", "is_pid")
 fn is_pid(pid: dynamic.Dynamic) -> Bool 
 
-@external(erlang, "gleam_stdlib", "identity")
-pub fn unsafe_coerce(a: a) -> b
-
 pub fn pid_decode(data: dynamic.Dynamic) -> Result(process.Pid, process.Pid) {
 
     let default_pid = process.spawn_unlinked(fn(){Nil})
@@ -59,7 +58,7 @@ pub fn pid_decode(data: dynamic.Dynamic) -> Result(process.Pid, process.Pid) {
 
         True -> {
 
-            let pid: process.Pid = unsafe_coerce(data)
+            let pid: process.Pid = utls.unsafe_coerce(data)
             Ok(pid)
         }
 
@@ -96,6 +95,31 @@ pub fn register_user_decoder(
 
             io.println("Failed to parse message register user")
             panic as "will have to pass some value if this actually gets handled by on_message"
+        }
+    }
+}
+
+pub fn register_failed_decoder(
+    _data: dynamic.Dynamic,
+    ) -> UserMessage {
+
+    RegisterFailed
+}
+
+pub fn register_success_decoder(
+    data: dynamic.Dynamic,
+    ) -> UserMessage {
+
+    case decode.run(data, decode.at([1], decode.string)) {
+
+        Ok(uid) -> {
+
+            RegisterSuccess(uid)
+        }
+
+        Error(_) -> {
+
+            panic as "illegal value passed to RegisterSuccess message"
         }
     }
 }
