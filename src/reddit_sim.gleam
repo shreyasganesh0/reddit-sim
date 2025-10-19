@@ -1,5 +1,6 @@
 import gleam/io
 import gleam/int
+import gleam/result
 import argv
 
 import client/users
@@ -29,7 +30,7 @@ pub fn main() -> Nil {
 
                 "server" -> {
 
-                    Ok(#(Server, 0))
+                    Ok(#(Server, "", 0))
                 }
 
                 "client" -> {
@@ -46,29 +47,50 @@ pub fn main() -> Nil {
             }
         }
 
-        [build_type, numusers] -> {
+        [build_type, client_mode, num_users] -> {
 
             case build_type {
 
                 "client" -> {
 
-                    case int.parse(numusers) {
+                    use clientmode <- result.try(fn() {
+                        case client_mode {
 
-                        Ok(users) -> {
+                            "simulator" -> {
 
-                            case users >= 1 {
+                                Ok(client_mode)
+                            }
 
-                                True -> Ok(#(Client, users))
+                            "web_server" -> {
 
-                                False -> Error(InvalidArgs)  
+                                Ok(client_mode)
+                            }
+
+                            _ -> Error(InvalidArgs)
+                        }
+                    }())
+
+                    use numusers <- result.try(fn() {
+                        case int.parse(num_users) {
+
+                            Ok(users) -> {
+
+                                case users >= 1 {
+
+                                    True -> Ok(users)
+
+                                    False -> Error(InvalidArgs)  
+                                }
+                            }
+
+                            Error(_) -> { 
+
+                                Error(InvalidArgs)
                             }
                         }
+                    }())
 
-                        Error(_) -> { 
-
-                            Error(InvalidArgs)
-                        }
-                    }
+                    Ok(#(Client, clientmode, numusers))
                 }
 
                 _ -> {
@@ -81,13 +103,13 @@ pub fn main() -> Nil {
 
         _ -> {
 
-            Error(WrongArgCount(1))
+            Error(WrongArgCount(3))
         }
     }
 
     case res {
 
-        Ok(#(build_type, num_users)) -> {
+        Ok(#(build_type, client_mode, num_users)) -> {
 
             case build_type {
 
@@ -98,7 +120,7 @@ pub fn main() -> Nil {
 
                 Client -> {
 
-                    users.create(num_users)
+                    users.create(client_mode, num_users)
                 }
             }
 

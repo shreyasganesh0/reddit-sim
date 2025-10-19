@@ -23,7 +23,7 @@ fn global_whereisname(name: atom.Atom) -> dynamic.Dynamic
 @external(erlang, "erlang", "self")
 fn self() -> process.Pid
 
-pub fn create(num_users: Int) -> Nil {
+pub fn create(mode: String, num_users: Int) -> Nil {
 
     let main_sub = process.new_subject()
     let engine_atom = atom.create("engine")
@@ -47,7 +47,18 @@ pub fn create(num_users: Int) -> Nil {
 
     let _ = supervisor.start(builder)
 
-    let _ = injector.start_injection(sub_list)
+    case mode == "simulator" {
+        True -> {
+            let _ = injector.start_injection(sub_list)
+            Nil
+        }
+
+        False -> {
+
+            Nil
+        }
+    }
+
 
     process.receive_forever(main_sub)
     Nil
@@ -138,7 +149,6 @@ fn init(
         |> actor.returning(sub)
         |> actor.selecting(selector)
 
-        utls.send_to_engine(#("register_user", self(), init_state.user_name, "test_pwd"))
         //process.send(sub, types.UserTestMessage)
 
         Ok(ret)

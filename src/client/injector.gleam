@@ -15,26 +15,24 @@ fn message_injector(
     message_client_map: Dict(types.UserMessage, List(Int)),
     ) -> Nil {
 
-    io.println("sending injection messages")
+    //io.println("sending injection messages")
 
     dict.each(message_client_map, fn(curr_msg, user_id_list) {
 
                                 list.each(user_id_list, fn(id) {
 
-                                                            io.println("checking id for injection " <> int.to_string(id))
+                                                            //io.println("checking id for injection " <> int.to_string(id))
                                                             case dict.get(client_subs, id) {
 
                                                                 Ok(sub) -> {
 
-                                                                    io.println("sending message to " 
-                                                                        <> int.to_string(id))
+                                                                    //io.println("sending message to " <> int.to_string(id))
                                                                     process.send(sub, curr_msg)
                                                                 }
 
                                                                 Error(_) -> {
 
-                                                                    io.println("sending message to " 
-                                                                        <> int.to_string(id))
+                                                                    //io.println("sending message to " <> int.to_string(id))
                                                                     Nil
                                                                 }
                                                             }
@@ -75,7 +73,7 @@ fn parse_config_file(
 
                                                                 Ok(msg) -> {
 
-                                                                    echo msg
+                                                                    //echo msg
                                                                     #(msg, [])
                                                                 }
 
@@ -110,7 +108,7 @@ fn parse_config_file(
                                                                                }
                                                                               }
                                                                )
-                                                            echo num_list
+                                                            //echo num_list
                                                             #(curr_k, num_list)
                                                         }
                                                     }
