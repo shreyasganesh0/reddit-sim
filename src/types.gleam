@@ -17,6 +17,12 @@ pub type UserMessage {
     RegisterFailed
 
     RegisterSuccess(uuid: String)
+
+    InjectRegisterUser
+
+    InjectCreateSubReddit
+
+    InjectJoinSubReddit
 }
 
 pub type UserState {
@@ -26,7 +32,8 @@ pub type UserState {
         self_sub: process.Subject(UserMessage),
         engine_pid: process.Pid,
         engine_atom: atom.Atom,
-        user_name: String
+        user_name: String,
+        uuid: String,
     )
 }
 

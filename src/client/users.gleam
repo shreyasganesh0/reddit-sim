@@ -1,6 +1,7 @@
 import gleam/io
 import gleam/int
 import gleam/list
+import gleam/dict
 import gleam/dynamic/decode
 import gleam/dynamic
 
@@ -14,12 +15,10 @@ import gleam/erlang/node
 
 import types
 import utls
+import client/injector
 
 @external(erlang, "global", "whereis_name")
 fn global_whereisname(name: atom.Atom) -> dynamic.Dynamic 
-
-@external(erlang, "global", "send")
-fn global_send(name: atom.Atom, msg: dynamic.Dynamic) -> process.Pid 
 
 @external(erlang, "erlang", "self")
 fn self() -> process.Pid
@@ -30,15 +29,25 @@ pub fn create(num_users: Int) -> Nil {
     let engine_atom = atom.create("engine")
     let engine_node = atom.create("engine@localhost")
 
+    let sub_list = dict.new()
     let builder = supervisor.new(supervisor.OneForOne)
-    let builder = list.range(1, num_users) 
-    |> list.fold(builder, fn(acc, a) {
+    let #(builder, sub_list) = list.range(1, num_users) 
+    |> list.fold(#(builder, sub_list), fn(acc, a) {
+
+                            let #(build, subs) = acc
                             let res = start(a, engine_atom, engine_node)
-                            supervisor.add(acc, supervision.worker(fn() {res}))
+
+                            let assert Ok(sub) = res
+                            #(
+                                supervisor.add(build, supervision.worker(fn() {res})), 
+                                dict.insert(subs, a, sub.data)
+                            )
                           }
         )
 
     let _ = supervisor.start(builder)
+
+    let _ = injector.start_injection(sub_list)
 
     process.receive_forever(main_sub)
     Nil
@@ -48,7 +57,7 @@ fn start(
     id: Int,
     engine_atom: atom.Atom,
     engine_node: atom.Atom
-    ) -> actor.StartResult(types.UserMessage) {
+    ) -> actor.StartResult(process.Subject(types.UserMessage)) {
 
     actor.new_with_initialiser(100000, fn(sub) {init(sub, id, engine_atom, engine_node)})
     |> actor.on_message(handle_user)
@@ -60,7 +69,14 @@ fn init(
     id: Int,
     engine_atom: atom.Atom,
     engine_node: atom.Atom
-    ) -> Result(actor.Initialised(types.UserState, types.UserMessage, types.UserMessage), String) {
+    ) -> Result(
+            actor.Initialised(
+                types.UserState, 
+                types.UserMessage, 
+                process.Subject(types.UserMessage)
+                ), 
+                String
+         ) {
 
         case node.connect(engine_node) {
             
@@ -105,7 +121,8 @@ fn init(
                             self_sub: sub,
                             engine_pid: pid,
                             engine_atom: engine_atom,
-                            user_name: "user_" <> int.to_string(id)
+                            user_name: "user_" <> int.to_string(id),
+                            uuid: ""
                          )
 
         let selector = process.new_selector() 
@@ -115,28 +132,16 @@ fn init(
                                 ]
 
         let selector = utls.create_selector(selector, selector_tag_list)
+        |> process.select_map(sub, fn(msg) {msg})
 
         let ret = actor.initialised(init_state)
-        |> actor.returning(types.UserTestMessage)
+        |> actor.returning(sub)
         |> actor.selecting(selector)
 
-        send(#("register_user", self(), init_state.user_name, "test_pwd"))
+        utls.send_to_engine(#("register_user", self(), init_state.user_name, "test_pwd"))
+        //process.send(sub, types.UserTestMessage)
 
         Ok(ret)
-}
-
-fn send(tup: a) -> process.Pid {
-    case atom.get("engine") {
-
-            Ok(engine_atom) -> {
-                global_send(engine_atom, utls.unsafe_coerce(tup)) 
-            }
-
-            Error(_) -> {
-
-                panic as "[CLIENT]: failed to get engine atom in send"
-            }
-    }
 }
 
 fn handle_user(
@@ -161,7 +166,33 @@ fn handle_user(
         types.RegisterSuccess(uuid) -> {
 
             io.println("[CLIENT]: registered client with uuid: " <> uuid)
+            let new_state = types.UserState(
+                                ..state,
+                                uuid: uuid
+                            )
+            actor.continue(new_state)
+        }
+
+        types.InjectRegisterUser -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting register user")
+            utls.send_to_engine(#("register_user", self(), state.user_name, "test_pwd"))
+            actor.continue(state)
+
+        }
+
+        types.InjectCreateSubReddit -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting create sub reddit")
             actor.continue(state)
         }
+
+        types.InjectJoinSubReddit -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting join subreddit")
+            actor.continue(state)
+        }
+
+
     }
 }

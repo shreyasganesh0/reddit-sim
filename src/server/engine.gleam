@@ -99,7 +99,7 @@ fn handle_engine(
 
                 True -> {
 
-                    utls.pid_send(send_pid, utls.unsafe_coerce(#("register_failed")))
+                    utls.send_to_pid(send_pid, #("register_failed"))
                     actor.continue(state)
                 }
 
@@ -120,7 +120,7 @@ fn handle_engine(
                                                     #(uid, passhash),
                                                  )
                                     )
-                    utls.pid_send(send_pid, utls.unsafe_coerce(#("register_success", uid)))
+                    utls.send_to_pid(send_pid, #("register_success", uid))
                     actor.continue(new_state)
                 }
             }

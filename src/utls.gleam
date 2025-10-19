@@ -1,12 +1,13 @@
 import gleam/erlang/process
 import gleam/dynamic
 import gleam/list
+import gleam/erlang/atom
 
 @external(erlang, "gleam_stdlib", "identity")
 pub fn unsafe_coerce(a: a) -> b
 
 @external(erlang, "erlang", "send")
-pub fn pid_send(pid: process.Pid, msg: dynamic.Dynamic) -> dynamic.Dynamic 
+fn pid_send(pid: process.Pid, msg: dynamic.Dynamic) -> dynamic.Dynamic 
 
 pub fn create_selector(
     selector: process.Selector(payload),
@@ -21,3 +22,26 @@ pub fn create_selector(
                                            }
         )
 }
+
+@external(erlang, "global", "send")
+fn global_send(name: atom.Atom, msg: dynamic.Dynamic) -> process.Pid 
+
+pub fn send_to_engine(tup: a) -> process.Pid {
+    case atom.get("engine") {
+
+            Ok(engine_atom) -> {
+                global_send(engine_atom, unsafe_coerce(tup)) 
+            }
+
+            Error(_) -> {
+
+                panic as "[CLIENT]: failed to get engine atom in send"
+            }
+    }
+}
+
+pub fn send_to_pid(pid: process.Pid, tup: a) -> dynamic.Dynamic {
+
+    pid_send(pid, unsafe_coerce(tup))
+}
+
