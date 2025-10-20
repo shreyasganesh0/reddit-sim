@@ -140,6 +140,8 @@ fn init(
         let selector_tag_list = [
                                 #("register_failed", types.register_failed_decoder, 0),
                                 #("register_success", types.register_success_decoder, 1),
+                                #("subreddit_created", types.subreddit_create_success_decoder, 1),
+                                #("subreddit_create_failed", types.subreddit_create_failed_decoder, 2),
                                 ]
 
         let selector = utls.create_selector(selector, selector_tag_list)
@@ -193,7 +195,20 @@ fn handle_user(
 
         types.InjectCreateSubReddit -> {
 
-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting create sub reddit")
+            case state.uuid == "" {
+
+                True -> {
+                    process.send_after(state.self_sub, 1000, types.InjectCreateSubReddit)
+                    Nil
+                }
+
+                False -> {
+
+                    io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting create sub reddit")
+                    utls.send_to_engine(#("create_subreddit", self(), state.uuid, "test_subreddit_" <> state.user_name))
+                    Nil
+                }
+            }
             actor.continue(state)
         }
 
@@ -203,6 +218,17 @@ fn handle_user(
             actor.continue(state)
         }
 
+        types.SubRedditCreateSuccess(subreddit_name) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully create subreddit" <> subreddit_name)
+            actor.continue(state)
+        }
+
+        types.SubRedditCreateFailed(subreddit_name, fail_reason) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to create subreddit" <> subreddit_name <> " \n|||| REASON: " <> fail_reason <> "|||\n")
+            actor.continue(state)
+        }
 
     }
 }

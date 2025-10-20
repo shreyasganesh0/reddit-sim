@@ -23,6 +23,10 @@ pub type UserMessage {
     InjectCreateSubReddit
 
     InjectJoinSubReddit
+
+    SubRedditCreateSuccess(subreddit_name: String)
+
+    SubRedditCreateFailed(subreddit_name: String, fail_reason: String)
 }
 
 pub type UserState {
@@ -42,16 +46,24 @@ pub type EngineMessage {
     EngineTestMessage
 
     RegisterUser(send_pid: process.Pid, username: String, password: String)
+
+    CreateSubReddit(send_pid: process.Pid, uuid: String, subreddit_name: String)
 }
 
 pub type EngineState {
 
     EngineState(
         self_sub: process.Subject(EngineMessage),
-        usermap: Dict(String, #(String, BitArray))
+        usermap: Dict(String, #(String, BitArray)),
+        pidmap: Dict(String, process.Pid),
+        subredditmap: Dict(String, #(String, String))
     )
 }
 
+pub type EngineError {
+
+    SubRedditCreateError(fail_reason: String)
+}
 
 @external(erlang, "erlang", "is_pid")
 fn is_pid(pid: dynamic.Dynamic) -> Bool 
@@ -100,8 +112,7 @@ pub fn register_user_decoder(
 
         Error(_) -> {
 
-            io.println("Failed to parse message register user")
-            panic as "will have to pass some value if this actually gets handled by on_message"
+            panic as "Failed to parse message register user"
         }
     }
 }
@@ -122,6 +133,77 @@ pub fn register_success_decoder(
         Ok(uid) -> {
 
             RegisterSuccess(uid)
+        }
+
+        Error(_) -> {
+
+            panic as "illegal value passed to RegisterSuccess message"
+        }
+    }
+}
+
+pub fn create_subreddit_decoder(
+    data: dynamic.Dynamic
+    ) -> EngineMessage {
+
+    let res = {
+
+        let pid_decoder = decode.new_primitive_decoder("Pid", pid_decode)
+        use send_pid <- result.try(decode.run(data, decode.at([1], pid_decoder)))
+        use uuid <- result.try(decode.run(data, decode.at([2], decode.string)))
+        use subreddit_name <- result.try(decode.run(data, decode.at([3], decode.string)))
+        Ok(#(send_pid, uuid, subreddit_name)) 
+    }
+
+    case res {
+
+        Ok(#(send_pid, uuid, subreddit_name)) -> {
+
+            CreateSubReddit(send_pid, uuid, subreddit_name)
+        } 
+
+        Error(_) -> {
+
+            panic as "illegal value passed to CreateSubReddit"
+        }
+    }
+
+}
+
+pub fn subreddit_create_success_decoder(
+    data: dynamic.Dynamic
+    ) -> UserMessage {
+
+    case decode.run(data, decode.at([1], decode.string)) {
+
+        Ok(name) -> {
+
+            SubRedditCreateSuccess(name)
+        }
+
+        Error(_) -> {
+
+            panic as "illegal value passed to SubRedditCreateSuccess"
+        }
+    }
+}
+
+pub fn subreddit_create_failed_decoder(
+    data: dynamic.Dynamic
+    ) -> UserMessage {
+
+    let res = {
+
+        use subreddit_name <- result.try(decode.run(data, decode.at([1], decode.string)))
+        use fail_reason <- result.try(decode.run(data, decode.at([2], decode.string)))
+        Ok(#(subreddit_name, fail_reason))
+    }
+
+    case res {
+
+        Ok(#(subreddit_name, fail_reason)) -> {
+
+            SubRedditCreateFailed(subreddit_name, fail_reason)
         }
 
         Error(_) -> {

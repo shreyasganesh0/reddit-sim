@@ -1,5 +1,6 @@
 import gleam/io
 import gleam/dict
+import gleam/result
 import gleam/crypto
 import gleam/bit_array
 //import gleam/dynamic
@@ -45,6 +46,8 @@ fn init(
     let init_state = types.EngineState(
                         self_sub: sub,
                         usermap: dict.new(),
+                        pidmap: dict.new(),
+                        subredditmap: dict.new(),
                      )
 
     let engine_atom = atom.create("engine")
@@ -67,7 +70,10 @@ fn init(
     }
 
     let selector = process.new_selector() 
-    let selector_tag_list = [#("register_user", types.register_user_decoder, 3)]
+    let selector_tag_list = [
+                            #("register_user", types.register_user_decoder, 3),
+                            #("create_subreddit", types.create_subreddit_decoder, 3)
+                            ]
 
     let selector = utls.create_selector(selector, selector_tag_list)
 
@@ -90,6 +96,7 @@ fn handle_engine(
             io.println("Started Engine...")
             actor.continue(state)
         }
+
 
         types.RegisterUser(send_pid, username, password) -> {
 
@@ -116,14 +123,99 @@ fn handle_engine(
                                         ..state,
                                         usermap: dict.insert(
                                                     state.usermap,
-                                                    username,
-                                                    #(uid, passhash),
-                                                 )
+                                                    uid,
+                                                    #(username, passhash),
+                                                 ),
+                                        pidmap: dict.insert(
+                                                    state.pidmap,
+                                                    uid,
+                                                    send_pid,
+                                                )
                                     )
                     utls.send_to_pid(send_pid, #("register_success", uid))
                     actor.continue(new_state)
                 }
             }
+        }
+
+
+        types.CreateSubReddit(send_pid, uuid, subreddit_name) -> {
+
+
+            let res = {
+            use pid <- result.try(
+                        result.map_error(
+                            dict.get(state.pidmap, uuid),
+                            fn(_) {
+
+                                let fail_reason = "User was not registered" 
+                                types.SubRedditCreateError(fail_reason)
+                            }
+                        )
+                       )
+            use #(username, _) <- result.try(
+                                    result.map_error(
+                                        dict.get(state.usermap, uuid),
+                                        fn(_) {
+                                            let fail_reason = 
+                                                "UserId does not exist in username table"
+                                            types.SubRedditCreateError(fail_reason)
+                                        }
+                                    )
+                                  )
+            case pid == send_pid {
+
+                True -> {
+
+                    case dict.has_key(state.subredditmap, subreddit_name) {
+
+                        False -> {
+                            let new_state = types.EngineState(
+                                ..state,
+                                subredditmap: dict.insert(
+                                    state.subredditmap,
+                                    subreddit_name,
+                                    #(uuid, username)
+                                )
+                            )
+
+                            Ok(new_state)
+                        }
+                        
+                        True -> {
+
+                            let fail_reason = "Subreddit already exists"
+                            Error(types.SubRedditCreateError(fail_reason))
+                        }
+                    }
+                }
+
+                False -> {
+
+                    let fail_reason = "Process did not match uuid"
+                    Error(types.SubRedditCreateError(fail_reason))
+                }
+            }
+            }
+
+            let new_state = case res {
+
+                Ok(new_state) -> {
+
+                    utls.send_to_pid(send_pid, #("subreddit_created", subreddit_name))
+                    new_state
+                }
+
+                Error(err) -> {
+
+                    let types.SubRedditCreateError(reason) = err
+
+                    utls.send_to_pid(send_pid, #("subreddit_create_failed", subreddit_name, reason))
+                    state
+                }
+            }
+
+            actor.continue(new_state)
         }
     }
 }
