@@ -3,6 +3,7 @@ import gleam/dict
 import gleam/result
 import gleam/crypto
 import gleam/bit_array
+import gleam/option.{Some, None}
 //import gleam/dynamic
 
 import gleam/otp/actor
@@ -48,6 +49,7 @@ fn init(
                         usermap: dict.new(),
                         pidmap: dict.new(),
                         subredditmap: dict.new(),
+                        topicmap: dict.new(),
                      )
 
     let engine_atom = atom.create("engine")
@@ -72,7 +74,8 @@ fn init(
     let selector = process.new_selector() 
     let selector_tag_list = [
                             #("register_user", types.register_user_decoder, 3),
-                            #("create_subreddit", types.create_subreddit_decoder, 3)
+                            #("create_subreddit", types.create_subreddit_decoder, 3),
+                            #("join_subreddit", types.join_subreddit_decoder, 3)
                             ]
 
     let selector = utls.create_selector(selector, selector_tag_list)
@@ -141,23 +144,13 @@ fn handle_engine(
 
         types.CreateSubReddit(send_pid, uuid, subreddit_name) -> {
 
-
             let res = {
                 use username <- result.try(utls.validate_request(send_pid, uuid, state.pidmap, state.usermap))
                 case dict.has_key(state.subredditmap, subreddit_name) {
 
                     False -> {
 
-                        let new_state = types.EngineState(
-                            ..state,
-                            subredditmap: dict.insert(
-                                state.subredditmap,
-                                subreddit_name,
-                                #(uuid, username)
-                            )
-                        )
-
-                        Ok(new_state)
+                        Ok(username)
                     }
                     
                     True -> {
@@ -170,15 +163,77 @@ fn handle_engine(
 
             let new_state = case res {
 
-                Ok(new_state) -> {
+                Ok(username) -> {
 
-                    utls.send_to_pid(send_pid, #("subreddit_created", subreddit_name))
+                    let new_state = types.EngineState(
+                                        ..state,
+                                        subredditmap: dict.insert(
+                                            state.subredditmap,
+                                            subreddit_name,
+                                            #(uuid, username)
+                                        )
+                                    )
+                    utls.send_to_pid(send_pid, #("subreddit_create_success", subreddit_name))
                     new_state
                 }
 
                 Error(reason) -> {
 
                     utls.send_to_pid(send_pid, #("subreddit_create_failed", subreddit_name, reason))
+                    state
+                }
+            }
+
+            actor.continue(new_state)
+        }
+
+        types.JoinSubReddit(send_pid, uuid, subreddit_name) -> {
+
+            let res = {
+                use username <- result.try(utls.validate_request(send_pid, uuid, state.pidmap, state.usermap))
+                use _ <- result.try(
+                                        result.map_error(
+                                            dict.get(state.subredditmap, subreddit_name),
+                                            fn(_) {"Subreddit does not exist"}
+                                        )
+                                    )
+                Ok(#(username, subreddit_name))
+            }
+
+            let new_state = case res {
+
+                Ok(#(username, subredditname)) -> {
+
+                    io.println("[ENGINE]: username: " <> username <> "joining subreddit: " <> subredditname)
+                    let new_state = types.EngineState(
+                        ..state,
+                        topicmap: dict.upsert(
+                                    state.topicmap, 
+                                    subredditname,
+                                    fn(maybe_list) {
+
+                                        case maybe_list {
+
+                                            Some(uuid_list) -> {
+
+                                                [uuid, ..uuid_list]
+                                            }
+
+                                            None -> {
+
+                                                [uuid]
+                                            }
+                                        }
+                                    }
+                                  )
+                    )
+                    utls.send_to_pid(send_pid, #("subreddit_join_success", subreddit_name))
+                    new_state
+                }
+
+                Error(reason) -> {
+
+                    utls.send_to_pid(send_pid, #("subreddit_join_failed", subreddit_name, reason))
                     state
                 }
             }
