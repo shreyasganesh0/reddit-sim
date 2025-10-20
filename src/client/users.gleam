@@ -215,6 +215,8 @@ fn handle_user(
         types.InjectJoinSubReddit -> {
 
             io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting join subreddit")
+
+            utls.send_to_engine(#("join_subreddit", self(), state.uuid, "test_subreddit_user_1" <> state.user_name))
             actor.continue(state)
         }
 

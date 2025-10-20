@@ -143,59 +143,29 @@ fn handle_engine(
 
 
             let res = {
-            use pid <- result.try(
-                        result.map_error(
-                            dict.get(state.pidmap, uuid),
-                            fn(_) {
+                use username <- result.try(utls.validate_request(send_pid, uuid, state.pidmap, state.usermap))
+                case dict.has_key(state.subredditmap, subreddit_name) {
 
-                                let fail_reason = "User was not registered" 
-                                types.SubRedditCreateError(fail_reason)
-                            }
-                        )
-                       )
-            use #(username, _) <- result.try(
-                                    result.map_error(
-                                        dict.get(state.usermap, uuid),
-                                        fn(_) {
-                                            let fail_reason = 
-                                                "UserId does not exist in username table"
-                                            types.SubRedditCreateError(fail_reason)
-                                        }
-                                    )
-                                  )
-            case pid == send_pid {
+                    False -> {
 
-                True -> {
-
-                    case dict.has_key(state.subredditmap, subreddit_name) {
-
-                        False -> {
-                            let new_state = types.EngineState(
-                                ..state,
-                                subredditmap: dict.insert(
-                                    state.subredditmap,
-                                    subreddit_name,
-                                    #(uuid, username)
-                                )
+                        let new_state = types.EngineState(
+                            ..state,
+                            subredditmap: dict.insert(
+                                state.subredditmap,
+                                subreddit_name,
+                                #(uuid, username)
                             )
+                        )
 
-                            Ok(new_state)
-                        }
-                        
-                        True -> {
+                        Ok(new_state)
+                    }
+                    
+                    True -> {
 
-                            let fail_reason = "Subreddit already exists"
-                            Error(types.SubRedditCreateError(fail_reason))
-                        }
+                        let fail_reason = "Subreddit already exists"
+                        Error(fail_reason)
                     }
                 }
-
-                False -> {
-
-                    let fail_reason = "Process did not match uuid"
-                    Error(types.SubRedditCreateError(fail_reason))
-                }
-            }
             }
 
             let new_state = case res {
@@ -206,9 +176,7 @@ fn handle_engine(
                     new_state
                 }
 
-                Error(err) -> {
-
-                    let types.SubRedditCreateError(reason) = err
+                Error(reason) -> {
 
                     utls.send_to_pid(send_pid, #("subreddit_create_failed", subreddit_name, reason))
                     state

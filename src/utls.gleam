@@ -1,6 +1,8 @@
 import gleam/erlang/process
 import gleam/dynamic
 import gleam/list
+import gleam/result
+import gleam/dict.{type Dict}
 import gleam/erlang/atom
 
 @external(erlang, "gleam_stdlib", "identity")
@@ -43,5 +45,52 @@ pub fn send_to_engine(tup: a) -> process.Pid {
 pub fn send_to_pid(pid: process.Pid, tup: a) -> dynamic.Dynamic {
 
     pid_send(pid, unsafe_coerce(tup))
+}
+
+pub type ValidateError {
+
+    ValidateError(fail_reason: String)
+}
+
+pub fn validate_request(
+    sender_pid: process.Pid, 
+    sender_uuid: String,
+    pidmap: Dict(String, process.Pid), 
+    usermap: Dict(String, #(String, BitArray))
+    ) -> Result(String, String) {
+
+        use pid <- result.try(
+                    result.map_error(
+                        dict.get(pidmap, sender_uuid),
+                        fn(_) {
+
+                            let fail_reason = "User was not registered" 
+                            fail_reason
+                        }
+                    )
+                   )
+        use #(username, _) <- result.try(
+                                result.map_error(
+                                    dict.get(usermap, sender_uuid),
+                                    fn(_) {
+                                        let fail_reason = 
+                                            "UserId does not exist in username table"
+                                        fail_reason
+                                    }
+                                )
+                              )
+        case pid == sender_pid {
+
+            True -> {
+
+                Ok(username)
+            }
+
+            False -> {
+
+                let fail_reason = "Process did not match uuid"
+                Error(fail_reason)
+            }
+        }
 }
 
