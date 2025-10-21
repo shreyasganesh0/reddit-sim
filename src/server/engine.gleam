@@ -50,6 +50,8 @@ fn init(
                         pidmap: dict.new(),
                         subredditmap: dict.new(),
                         topicmap: dict.new(),
+                        user_index: dict.new(),
+                        subreddit_index: dict.new(),
                      )
 
     let engine_atom = atom.create("engine")
@@ -133,7 +135,12 @@ fn handle_engine(
                                                     state.pidmap,
                                                     uid,
                                                     send_pid,
-                                                )
+                                                ),
+                                        user_index: dict.insert(
+                                                        state.user_index,
+                                                        username,
+                                                        uid
+                                                    )
                                     )
                     utls.send_to_pid(send_pid, #("register_success", uid))
                     actor.continue(new_state)
@@ -146,7 +153,7 @@ fn handle_engine(
 
             let res = {
                 use username <- result.try(utls.validate_request(send_pid, uuid, state.pidmap, state.usermap))
-                case dict.has_key(state.subredditmap, subreddit_name) {
+                case dict.has_key(state.subreddit_index, subreddit_name) {
 
                     False -> {
 
@@ -165,12 +172,18 @@ fn handle_engine(
 
                 Ok(username) -> {
 
+                    let subreddit_uuid = uuid.v4_string()
                     let new_state = types.EngineState(
                                         ..state,
                                         subredditmap: dict.insert(
                                             state.subredditmap,
+                                            subreddit_uuid,
+                                            #(uuid, subreddit_name, username)
+                                        ),
+                                        subreddit_index: dict.insert(
+                                            state.subreddit_index,
                                             subreddit_name,
-                                            #(uuid, username)
+                                            subreddit_uuid,
                                         )
                                     )
                     utls.send_to_pid(send_pid, #("subreddit_create_success", subreddit_name))
@@ -192,10 +205,10 @@ fn handle_engine(
             let res = {
                 use username <- result.try(utls.validate_request(send_pid, uuid, state.pidmap, state.usermap))
                 use _ <- result.try(
-                                        result.map_error(
-                                            dict.get(state.subredditmap, subreddit_name),
-                                            fn(_) {"Subreddit does not exist"}
-                                        )
+                                    result.map_error(
+                                        dict.get(state.subreddit_index, subreddit_name),
+                                        fn(_) {"Subreddit does not exist"}
+                                    )
                                     )
                 Ok(#(username, subreddit_name))
             }

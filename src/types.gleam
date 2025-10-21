@@ -61,9 +61,11 @@ pub type EngineState {
     EngineState(
         self_sub: process.Subject(EngineMessage),
         usermap: Dict(String, #(String, BitArray)),
+        user_index: Dict(String, String),
         pidmap: Dict(String, process.Pid),
-        subredditmap: Dict(String, #(String, String)),
-        topicmap: Dict(String, List(String))
+        subredditmap: Dict(String, #(String, String, String)),
+        topicmap: Dict(String, List(String)),
+        subreddit_index: Dict(String, String)
     )
 }
 
