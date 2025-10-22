@@ -24,6 +24,8 @@ pub type UserMessage {
 
     InjectJoinSubReddit
 
+    InjectCreatePost
+
     SubRedditCreateSuccess(subreddit_name: String)
 
     SubRedditCreateFailed(subreddit_name: String, fail_reason: String)
@@ -31,6 +33,10 @@ pub type UserMessage {
     SubRedditJoinSuccess(subreddit_name: String)
 
     SubRedditJoinFailed(subreddit_name: String, fail_reason: String)
+
+    CreatePostSuccess(subreddit_name: String)
+
+    CreatePostFailed(subreddit_name: String, fail_reason: String)
 }
 
 pub type UserState {
@@ -45,6 +51,14 @@ pub type UserState {
     )
 }
 
+pub type Post {
+
+    Post(
+        title: String,
+        body: String,
+    )
+}
+
 pub type EngineMessage {
 
     EngineTestMessage
@@ -54,18 +68,22 @@ pub type EngineMessage {
     CreateSubReddit(send_pid: process.Pid, uuid: String, subreddit_name: String)
 
     JoinSubReddit(send_pid: process.Pid, uuid: String, subreddit_name: String)
+
+    CreatePost(send_pid: process.Pid, uuid: String, subreddit_name: String, post: Post)
+
 }
 
 pub type EngineState {
 
     EngineState(
         self_sub: process.Subject(EngineMessage),
-        usermap: Dict(String, #(String, BitArray)),
+        user_metadata: Dict(String, #(String, BitArray)),
         user_index: Dict(String, String),
         pidmap: Dict(String, process.Pid),
-        subredditmap: Dict(String, #(String, String, String)),
+        subreddit_metadata: Dict(String, #(String, String, String)),
         topicmap: Dict(String, List(String)),
-        subreddit_index: Dict(String, String)
+        subreddit_index: Dict(String, String),
+        subreddit_posts: Dict(String, List(Post))
     )
 }
 
@@ -290,4 +308,92 @@ pub fn subreddit_join_failed_decoder(
             panic as "illegal value passed to SubRedditJoinFailed message"
         }
     }
+}
+
+pub fn create_post_success_decoder(
+    data: dynamic.Dynamic
+    ) -> UserMessage {
+
+    case decode.run(data, decode.at([1], decode.string)) {
+
+        Ok(name) -> {
+
+            CreatePostSuccess(name)
+        }
+
+        Error(_) -> {
+
+            panic as "illegal value passed to CreatePostSuccess" 
+        }
+    }
+}
+
+pub fn create_post_failed_decoder(
+    data: dynamic.Dynamic
+    ) -> UserMessage {
+
+    let res = {
+
+        use subreddit_name <- result.try(decode.run(data, decode.at([1], decode.string)))
+        use fail_reason <- result.try(decode.run(data, decode.at([2], decode.string)))
+        Ok(#(subreddit_name, fail_reason))
+    }
+
+    case res {
+
+        Ok(#(subreddit_name, fail_reason)) -> {
+
+            CreatePostFailed(subreddit_name, fail_reason)
+        }
+
+        Error(_) -> {
+
+            panic as "illegal value passed to CreatePostFailed message"
+        }
+    }
+}
+
+pub fn post_serializer(post: Post) -> dynamic.Dynamic {
+
+    dynamic.properties([
+        #(dynamic.string("title"), dynamic.string(post.title)),
+        #(dynamic.string("body"), dynamic.string(post.body)),
+        ])
+
+}
+
+fn post_decoder() -> decode.Decoder(Post) {
+
+    use title <- decode.field("title", decode.string)
+    use body <- decode.field("body", decode.string)
+    decode.success(Post(title: title, body: body))
+}
+
+pub fn create_post_decoder(
+    data: dynamic.Dynamic
+    ) -> EngineMessage {
+
+    let res = {
+
+        let pid_decoder = decode.new_primitive_decoder("Pid", pid_decode)
+        use send_pid <- result.try(decode.run(data, decode.at([1], pid_decoder)))
+        use uuid <- result.try(decode.run(data, decode.at([2], decode.string)))
+        use subreddit_name <- result.try(decode.run(data, decode.at([3], decode.string)))
+        use post <- result.try(decode.run(data, decode.at([4], post_decoder())))
+        Ok(#(send_pid, uuid, subreddit_name, post)) 
+    }
+
+    case res {
+
+        Ok(#(send_pid, uuid, subreddit_name, post)) -> {
+
+            CreatePost(send_pid, uuid, subreddit_name, post)
+        } 
+
+        Error(_) -> {
+
+            panic as "illegal value passed to JoinSubReddit"
+        }
+    }
+
 }

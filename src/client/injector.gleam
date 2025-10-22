@@ -154,6 +154,7 @@ fn message_translator() -> Dict(String, types.UserMessage) {
             #("register_user" ,types.InjectRegisterUser),
             #("create_subreddit", types.InjectCreateSubReddit),
             #("join_subreddit", types.InjectJoinSubReddit),
+            #("create_post", types.InjectCreatePost),
             ])
 }
     

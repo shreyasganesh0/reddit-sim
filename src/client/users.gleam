@@ -144,6 +144,8 @@ fn init(
                                 #("subreddit_create_failed", types.subreddit_create_failed_decoder, 2),
                                 #("subreddit_join_success", types.subreddit_join_success_decoder, 1),
                                 #("subreddit_join_failed", types.subreddit_join_failed_decoder, 2),
+                                #("create_post_success", types.create_post_success_decoder, 1),
+                                #("create_post_failed", types.create_post_failed_decoder, 2),
                                 ]
 
         let selector = utls.create_selector(selector, selector_tag_list)
@@ -234,6 +236,31 @@ fn handle_user(
             actor.continue(state)
         }
 
+        types.InjectCreatePost -> {
+
+            case state.uuid == "" {
+
+                True -> {
+
+                    process.send_after(state.self_sub, 3000, types.InjectCreatePost)
+                    Nil
+                }
+
+                False -> {
+
+                    let post = types.Post(
+                                title: "test title",
+                                body: "post_body"
+                               )
+                    |> types.post_serializer
+                    io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting create post")
+                    utls.send_to_engine(#("create_post", self(), state.uuid, "test_subreddit_user_1", post))
+                    Nil
+                }
+            }
+            actor.continue(state)
+        }
+
         types.SubRedditCreateSuccess(subreddit_name) -> {
 
             io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully created subreddit " <> subreddit_name)
@@ -255,6 +282,18 @@ fn handle_user(
         types.SubRedditJoinFailed(subreddit_name, fail_reason) -> {
 
             io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to join subreddit " <> subreddit_name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+            actor.continue(state)
+        }
+        
+        types.CreatePostSuccess(subreddit_name) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully posted to subreddit " <> subreddit_name)
+            actor.continue(state)
+        }
+
+        types.CreatePostFailed(subreddit_name, fail_reason) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to post to subreddit " <> subreddit_name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
             actor.continue(state)
         }
 
