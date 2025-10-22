@@ -5,6 +5,8 @@ import gleam/result
 import gleam/dict.{type Dict}
 import gleam/erlang/atom
 
+import types
+
 @external(erlang, "gleam_stdlib", "identity")
 pub fn unsafe_coerce(a: a) -> b
 
@@ -56,7 +58,7 @@ pub fn validate_request(
     sender_pid: process.Pid, 
     sender_uuid: String,
     pidmap: Dict(String, process.Pid), 
-    usermap: Dict(String, #(String, BitArray, List(String)))
+    usermap: Dict(String, types.UserMetaData)
     ) -> Result(String, String) {
 
         use pid <- result.try(
@@ -69,7 +71,7 @@ pub fn validate_request(
                         }
                     )
                    )
-        use #(username, _, _) <- result.try(
+        use types.UserMetaData(username, _, _) <- result.try(
                                 result.map_error(
                                     dict.get(usermap, sender_uuid),
                                     fn(_) {

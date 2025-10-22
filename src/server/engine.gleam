@@ -16,6 +16,7 @@ import gleam/erlang/atom
 import youid/uuid
 
 import types 
+import selectors
 import utls
 
 @external(erlang, "global", "register_name")
@@ -76,10 +77,10 @@ fn init(
 
     let selector = process.new_selector() 
     let selector_tag_list = [
-                            #("register_user", types.register_user_decoder, 3),
-                            #("create_subreddit", types.create_subreddit_decoder, 3),
-                            #("join_subreddit", types.join_subreddit_decoder, 3),
-                            #("create_post", types.create_post_decoder, 4)
+                            #("register_user", selectors.register_user_selector, 3),
+                            #("create_subreddit", selectors.create_subreddit_selector, 3),
+                            #("join_subreddit", selectors.join_subreddit_selector, 3),
+                            #("create_post", selectors.create_post_selector, 4)
                             ]
 
     let selector = utls.create_selector(selector, selector_tag_list)
@@ -113,7 +114,7 @@ fn handle_engine(
 
                 True -> {
 
-                    utls.send_to_pid(send_pid, #("register_failed"))
+                    utls.send_to_pid(send_pid, #("register_user_failed"))
                     actor.continue(state)
                 }
 
@@ -131,7 +132,9 @@ fn handle_engine(
                                         user_metadata: dict.insert(
                                                     state.user_metadata,
                                                     uid,
-                                                    #(username, passhash, []),
+                                                    types.UserMetaData(
+                                                        username, passhash, []
+                                                    ),
                                                  ),
                                         pidmap: dict.insert(
                                                     state.pidmap,
@@ -144,7 +147,7 @@ fn handle_engine(
                                                         uid
                                                     )
                                     )
-                    utls.send_to_pid(send_pid, #("register_success", uid))
+                    utls.send_to_pid(send_pid, #("register_user_success", uid))
                     actor.continue(new_state)
                 }
             }
@@ -154,12 +157,12 @@ fn handle_engine(
         types.CreateSubReddit(send_pid, uuid, subreddit_name) -> {
 
             let res = {
-                use username <- result.try(utls.validate_request(send_pid, uuid, state.pidmap, state.user_metadata))
+                use _ <- result.try(utls.validate_request(send_pid, uuid, state.pidmap, state.user_metadata))
                 case dict.has_key(state.subreddit_index, subreddit_name) {
 
                     False -> {
 
-                        Ok(username)
+                        Ok(Nil)
                     }
                     
                     True -> {
@@ -172,7 +175,7 @@ fn handle_engine(
 
             let new_state = case res {
 
-                Ok(username) -> {
+                Ok(_) -> {
 
                     let subreddit_uuid = uuid.v4_string()
                     let new_state = types.EngineState(
@@ -180,7 +183,10 @@ fn handle_engine(
                                         subreddit_metadata: dict.insert(
                                             state.subreddit_metadata,
                                             subreddit_uuid,
-                                            #(uuid, subreddit_name, username)
+                                            types.SubRedditMetaData(
+                                                name: subreddit_name,
+                                                creator_id: uuid 
+                                            ),
                                         ),
                                         subreddit_index: dict.insert(
                                             state.subreddit_index,
@@ -188,13 +194,13 @@ fn handle_engine(
                                             subreddit_uuid,
                                         )
                                     )
-                    utls.send_to_pid(send_pid, #("subreddit_create_success", subreddit_name))
+                    utls.send_to_pid(send_pid, #("create_subreddit_success", subreddit_name))
                     new_state
                 }
 
                 Error(reason) -> {
 
-                    utls.send_to_pid(send_pid, #("subreddit_create_failed", subreddit_name, reason))
+                    utls.send_to_pid(send_pid, #("create_subreddit_failed", subreddit_name, reason))
                     state
                 }
             }
@@ -250,9 +256,15 @@ fn handle_engine(
 
                                                 None -> panic as "shouldnt be possible for user not to exist while joining"
 
-                                                Some(#(username, pass, subreddit_list)) -> {
+                                                Some(types.UserMetaData(
+                                                        username, pass, subreddit_list
+                                                    )) -> {
 
-                                                    #(username, pass, [subreddituuid, ..subreddit_list])
+                                                    types.UserMetaData(
+                                                        username,
+                                                        pass,
+                                                        [subreddituuid, ..subreddit_list]
+                                                    )
                                                 }
                                             }
                                         }
@@ -324,6 +336,5 @@ fn handle_engine(
 
             actor.continue(new_state)
         }
-
     }
 }

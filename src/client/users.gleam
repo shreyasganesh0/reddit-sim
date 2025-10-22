@@ -14,7 +14,9 @@ import gleam/erlang/atom
 import gleam/erlang/node
 
 import types
+import selectors
 import utls
+import decoders
 import client/injector
 
 @external(erlang, "global", "whereis_name")
@@ -109,10 +111,8 @@ fn init(
         }
 
         process.sleep(1000)
-        let pid = case global_whereisname(engine_atom) 
-        |> decode.run(decode.new_primitive_decoder("Pid", types.pid_decode))
-
-        {
+        let data = global_whereisname(engine_atom)
+        let pid = case decode.run(data, decoders.pid_decoder(data)) {
 
             Ok(engine_pid) -> {
 
@@ -137,16 +137,17 @@ fn init(
                          )
 
         let selector = process.new_selector() 
-        let selector_tag_list = [
-                                #("register_failed", types.register_failed_decoder, 0),
-                                #("register_success", types.register_success_decoder, 1),
-                                #("subreddit_create_success", types.subreddit_create_success_decoder, 1),
-                                #("subreddit_create_failed", types.subreddit_create_failed_decoder, 2),
-                                #("subreddit_join_success", types.subreddit_join_success_decoder, 1),
-                                #("subreddit_join_failed", types.subreddit_join_failed_decoder, 2),
-                                #("create_post_success", types.create_post_success_decoder, 1),
-                                #("create_post_failed", types.create_post_failed_decoder, 2),
-                                ]
+        let selector_tag_list = 
+            [
+                #("register_user_failed", selectors.register_user_failed_selector, 0),
+                #("register_user_success", selectors.register_user_success_selector, 1),
+                #("create_subreddit_success", selectors.create_subreddit_success_selector, 1),
+                #("create_subreddit_failed", selectors.create_subreddit_failed_selector, 2),
+                #("join_subreddit_success", selectors.join_subreddit_success_selector, 1),
+                #("join_subreddit_failed", selectors.join_subreddit_failed_selector, 2),
+                #("create_post_success", selectors.create_post_success_selector, 1),
+                #("create_post_failed", selectors.create_post_failed_selector, 2),
+            ]
 
         let selector = utls.create_selector(selector, selector_tag_list)
         |> process.select_map(sub, fn(msg) {msg})
@@ -173,13 +174,23 @@ fn handle_user(
             actor.continue(state)
         }
 
-        types.RegisterFailed -> {
+//---------------------------------------------- RegisterUser -------------------------------------------
+
+        types.InjectRegisterUser -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting register user")
+            utls.send_to_engine(#("register_user", self(), state.user_name, "test_pwd"))
+            actor.continue(state)
+
+        }
+
+        types.RegisterUserFailed -> {
 
             io.println("User id taken.. try another")
             actor.continue(state)
         }
 
-        types.RegisterSuccess(uuid) -> {
+        types.RegisterUserSuccess(uuid) -> {
 
             io.println("[CLIENT]: registered client with uuid: " <> uuid)
             let new_state = types.UserState(
@@ -189,13 +200,7 @@ fn handle_user(
             actor.continue(new_state)
         }
 
-        types.InjectRegisterUser -> {
-
-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting register user")
-            utls.send_to_engine(#("register_user", self(), state.user_name, "test_pwd"))
-            actor.continue(state)
-
-        }
+//---------------------------------------------- CreateSubReddit ----------------------------------------
 
         types.InjectCreateSubReddit -> {
 
@@ -215,6 +220,20 @@ fn handle_user(
             }
             actor.continue(state)
         }
+
+        types.CreateSubRedditSuccess(subreddit_name) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully created subreddit " <> subreddit_name)
+            actor.continue(state)
+        }
+
+        types.CreateSubRedditFailed(subreddit_name, fail_reason) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to create subreddit " <> subreddit_name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+            actor.continue(state)
+        }
+
+//---------------------------------------------- JoinSubReddit ------------------------------------------
 
         types.InjectJoinSubReddit -> {
 
@@ -236,6 +255,20 @@ fn handle_user(
             actor.continue(state)
         }
 
+        types.JoinSubRedditSuccess(subreddit_name) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully joined subreddit " <> subreddit_name)
+            actor.continue(state)
+        }
+
+        types.JoinSubRedditFailed(subreddit_name, fail_reason) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to join subreddit " <> subreddit_name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+            actor.continue(state)
+        }
+
+//---------------------------------------------- CreatePost -------------------------------------------
+
         types.InjectCreatePost -> {
 
             case state.uuid == "" {
@@ -252,36 +285,12 @@ fn handle_user(
                                 title: "test title",
                                 body: "post_body"
                                )
-                    |> types.post_serializer
+                    |> decoders.post_serializer
                     io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting create post")
                     utls.send_to_engine(#("create_post", self(), state.uuid, "test_subreddit_user_1", post))
                     Nil
                 }
             }
-            actor.continue(state)
-        }
-
-        types.SubRedditCreateSuccess(subreddit_name) -> {
-
-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully created subreddit " <> subreddit_name)
-            actor.continue(state)
-        }
-
-        types.SubRedditCreateFailed(subreddit_name, fail_reason) -> {
-
-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to create subreddit " <> subreddit_name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
-            actor.continue(state)
-        }
-
-        types.SubRedditJoinSuccess(subreddit_name) -> {
-
-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully joined subreddit " <> subreddit_name)
-            actor.continue(state)
-        }
-
-        types.SubRedditJoinFailed(subreddit_name, fail_reason) -> {
-
-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to join subreddit " <> subreddit_name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
             actor.continue(state)
         }
         
