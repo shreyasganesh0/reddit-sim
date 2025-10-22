@@ -204,25 +204,25 @@ fn handle_engine(
 
             let res = {
                 use username <- result.try(utls.validate_request(send_pid, uuid, state.pidmap, state.usermap))
-                use _ <- result.try(
+                use subreddit_uuid <- result.try(
                                     result.map_error(
                                         dict.get(state.subreddit_index, subreddit_name),
                                         fn(_) {"Subreddit does not exist"}
                                     )
                                     )
-                Ok(#(username, subreddit_name))
+                Ok(#(username, subreddit_uuid))
             }
 
             let new_state = case res {
 
-                Ok(#(username, subredditname)) -> {
+                Ok(#(username, subreddituuid)) -> {
 
-                    io.println("[ENGINE]: username: " <> username <> "joining subreddit: " <> subredditname)
+                    io.println("[ENGINE]: username: " <> username <> "joining subreddit: " <> subreddituuid)
                     let new_state = types.EngineState(
                         ..state,
                         topicmap: dict.upsert(
                                     state.topicmap, 
-                                    subredditname,
+                                    subreddituuid,
                                     fn(maybe_list) {
 
                                         case maybe_list {
