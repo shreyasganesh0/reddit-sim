@@ -131,7 +131,7 @@ fn handle_engine(
                                         user_metadata: dict.insert(
                                                     state.user_metadata,
                                                     uid,
-                                                    #(username, passhash),
+                                                    #(username, passhash, []),
                                                  ),
                                         pidmap: dict.insert(
                                                     state.pidmap,
@@ -240,7 +240,23 @@ fn handle_engine(
                                             }
                                         }
                                     }
-                                  )
+                                  ),
+                        user_metadata: dict.upsert(
+                                        state.user_metadata,
+                                        uuid,
+                                        fn(maybe_user) {
+
+                                            case maybe_user {
+
+                                                None -> panic as "shouldnt be possible for user not to exist while joining"
+
+                                                Some(#(username, pass, subreddit_list)) -> {
+
+                                                    #(username, pass, [subreddituuid, ..subreddit_list])
+                                                }
+                                            }
+                                        }
+                                       )
                     )
                     utls.send_to_pid(send_pid, #("subreddit_join_success", subreddit_name))
                     new_state

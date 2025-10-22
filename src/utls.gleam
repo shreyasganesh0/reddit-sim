@@ -56,7 +56,7 @@ pub fn validate_request(
     sender_pid: process.Pid, 
     sender_uuid: String,
     pidmap: Dict(String, process.Pid), 
-    usermap: Dict(String, #(String, BitArray))
+    usermap: Dict(String, #(String, BitArray, List(String)))
     ) -> Result(String, String) {
 
         use pid <- result.try(
@@ -69,7 +69,7 @@ pub fn validate_request(
                         }
                     )
                    )
-        use #(username, _) <- result.try(
+        use #(username, _, _) <- result.try(
                                 result.map_error(
                                     dict.get(usermap, sender_uuid),
                                     fn(_) {

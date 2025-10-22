@@ -77,7 +77,7 @@ pub type EngineState {
 
     EngineState(
         self_sub: process.Subject(EngineMessage),
-        user_metadata: Dict(String, #(String, BitArray)),
+        user_metadata: Dict(String, #(String, BitArray, List(String))),
         user_index: Dict(String, String),
         pidmap: Dict(String, process.Pid),
         subreddit_metadata: Dict(String, #(String, String, String)),
