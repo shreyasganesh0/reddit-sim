@@ -4,7 +4,7 @@ import gleam/result
 import gleam/crypto
 import gleam/bit_array
 import gleam/option.{Some, None}
-//import gleam/dynamic
+import gleam/dynamic
 
 import gleam/otp/actor
 import gleam/otp/static_supervisor as supervisor
@@ -76,12 +76,7 @@ fn init(
     }
 
     let selector = process.new_selector() 
-    let selector_tag_list = [
-                            #("register_user", selectors.register_user_selector, 3),
-                            #("create_subreddit", selectors.create_subreddit_selector, 3),
-                            #("join_subreddit", selectors.join_subreddit_selector, 3),
-                            #("create_post", selectors.create_post_selector, 4)
-                            ]
+    let selector_tag_list = get_selector_list()
 
     let selector = utls.create_selector(selector, selector_tag_list)
 
@@ -92,6 +87,15 @@ fn init(
     Ok(ret)
 }
 
+fn get_selector_list() -> List(#(String, fn(dynamic.Dynamic) -> types.EngineMessage, Int)) {
+
+        [
+        #("register_user", selectors.register_user_selector, 3),
+        #("create_subreddit", selectors.create_subreddit_selector, 3),
+        #("join_subreddit", selectors.join_subreddit_selector, 3),
+        #("create_post", selectors.create_post_selector, 4)
+        ]
+}
 fn handle_engine(
     state: types.EngineState,
     msg: types.EngineMessage,

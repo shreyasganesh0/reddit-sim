@@ -137,17 +137,7 @@ fn init(
                          )
 
         let selector = process.new_selector() 
-        let selector_tag_list = 
-            [
-                #("register_user_failed", selectors.register_user_failed_selector, 0),
-                #("register_user_success", selectors.register_user_success_selector, 1),
-                #("create_subreddit_success", selectors.create_subreddit_success_selector, 1),
-                #("create_subreddit_failed", selectors.create_subreddit_failed_selector, 2),
-                #("join_subreddit_success", selectors.join_subreddit_success_selector, 1),
-                #("join_subreddit_failed", selectors.join_subreddit_failed_selector, 2),
-                #("create_post_success", selectors.create_post_success_selector, 1),
-                #("create_post_failed", selectors.create_post_failed_selector, 2),
-            ]
+        let selector_tag_list = get_selector_list() 
 
         let selector = utls.create_selector(selector, selector_tag_list)
         |> process.select_map(sub, fn(msg) {msg})
@@ -161,6 +151,18 @@ fn init(
         Ok(ret)
 }
 
+fn get_selector_list() -> List(#(String, fn(dynamic.Dynamic) -> types.UserMessage, Int)) {
+            [
+                #("register_user_failed", selectors.register_user_failed_selector, 0),
+                #("register_user_success", selectors.register_user_success_selector, 1),
+                #("create_subreddit_success", selectors.create_subreddit_success_selector, 1),
+                #("create_subreddit_failed", selectors.create_subreddit_failed_selector, 2),
+                #("join_subreddit_success", selectors.join_subreddit_success_selector, 1),
+                #("join_subreddit_failed", selectors.join_subreddit_failed_selector, 2),
+                #("create_post_success", selectors.create_post_success_selector, 1),
+                #("create_post_failed", selectors.create_post_failed_selector, 2),
+            ]
+}
 fn handle_user(
     state: types.UserState,
     msg: types.UserMessage
