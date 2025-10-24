@@ -1,0 +1,8 @@
+$$$
+typ
+post ||| title:string, body:string
+
+$$$
+msg
+create_post ||| sender_pid:string, sender_uuid:string, subreddit_name:post
+register_user ||| sender_pid:string, username:string, password:string
