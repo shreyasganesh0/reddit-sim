@@ -34,10 +34,28 @@ pub fn register_user_selector(
 }
 
 pub fn register_user_failed_selector(
-    _data: dynamic.Dynamic,
+    data: dynamic.Dynamic,
     ) -> types.UserMessage {
 
-    types.RegisterUserFailed
+    let res = {
+
+        use name <- result.try(decode.run(data, decode.at([1], decode.string)))
+        use fail_reason <- result.try(decode.run(data, decode.at([2], decode.string)))
+        Ok(#(name, fail_reason))
+    }
+
+    case res {
+
+        Ok(#(name, fail_reason)) -> {
+
+            types.RegisterUserFailed(name, fail_reason)
+        }
+
+        Error(_) -> {
+
+            panic as "illegal value passed to SubRedditCreateFailed message"
+        }
+    }
 }
 
 pub fn register_user_success_selector(

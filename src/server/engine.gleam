@@ -118,7 +118,7 @@ fn handle_engine(
 
                 True -> {
 
-                    utls.send_to_pid(send_pid, #("register_user_failed"))
+                    utls.send_to_pid(send_pid, #("register_user_failed", username, "username has been taken"))
                     actor.continue(state)
                 }
 

@@ -153,7 +153,7 @@ fn init(
 
 fn get_selector_list() -> List(#(String, fn(dynamic.Dynamic) -> types.UserMessage, Int)) {
             [
-                #("register_user_failed", selectors.register_user_failed_selector, 0),
+                #("register_user_failed", selectors.register_user_failed_selector, 2),
                 #("register_user_success", selectors.register_user_success_selector, 1),
                 #("create_subreddit_success", selectors.create_subreddit_success_selector, 1),
                 #("create_subreddit_failed", selectors.create_subreddit_failed_selector, 2),
@@ -186,9 +186,9 @@ fn handle_user(
 
         }
 
-        types.RegisterUserFailed -> {
+        types.RegisterUserFailed(name, fail_reason) -> {
 
-            io.println("User id taken.. try another")
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to register user " <> name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
             actor.continue(state)
         }
 

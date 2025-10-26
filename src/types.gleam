@@ -7,7 +7,7 @@ pub type UserMessage {
 
     UserTestMessage
 
-    RegisterUserFailed
+    RegisterUserFailed(name: String, fail_reason: String)
 
     RegisterUserSuccess(uuid: String)
 
