@@ -2,41 +2,14 @@ import gleam/dict.{type Dict}
 
 import gleam/erlang/process
 import gleam/erlang/atom
+import generated/generated_types as gen_types
 
-pub type UserMessage {
-
-    UserTestMessage
-
-    RegisterUserFailed(name: String, fail_reason: String)
-
-    RegisterUserSuccess(uuid: String)
-
-    InjectRegisterUser
-
-    InjectCreateSubReddit
-
-    InjectJoinSubReddit
-
-    InjectCreatePost
-
-    CreateSubRedditSuccess(subreddit_name: String)
-
-    CreateSubRedditFailed(subreddit_name: String, fail_reason: String)
-
-    JoinSubRedditSuccess(subreddit_name: String)
-
-    JoinSubRedditFailed(subreddit_name: String, fail_reason: String)
-
-    CreatePostSuccess(subreddit_name: String)
-
-    CreatePostFailed(subreddit_name: String, fail_reason: String)
-}
 
 pub type UserState {
 
     UserState(
         id: Int,
-        self_sub: process.Subject(UserMessage),
+        self_sub: process.Subject(gen_types.UserMessage),
         engine_pid: process.Pid,
         engine_atom: atom.Atom,
         user_name: String,
@@ -44,27 +17,6 @@ pub type UserState {
     )
 }
 
-pub type Post {
-
-    Post(
-        title: String,
-        body: String,
-    )
-}
-
-pub type EngineMessage {
-
-    EngineTestMessage
-
-    RegisterUser(send_pid: process.Pid, username: String, password: String)
-
-    CreateSubReddit(send_pid: process.Pid, uuid: String, subreddit_name: String)
-
-    JoinSubReddit(send_pid: process.Pid, uuid: String, subreddit_name: String)
-
-    CreatePost(send_pid: process.Pid, uuid: String, subreddit_name: String, post: Post)
-
-}
 
 pub type UserMetaData {
 
@@ -75,9 +27,9 @@ pub type UserMetaData {
     )
 }
 
-pub type SubRedditMetaData {
+pub type SubredditMetaData {
 
-    SubRedditMetaData(
+    SubredditMetaData(
         name: String,
         creator_id: String,
     )
@@ -86,14 +38,14 @@ pub type SubRedditMetaData {
 pub type EngineState {
 
     EngineState(
-        self_sub: process.Subject(EngineMessage),
+        self_sub: process.Subject(gen_types.EngineMessage),
         user_metadata: Dict(String, UserMetaData),
         user_index: Dict(String, String),
         pidmap: Dict(String, process.Pid),
-        subreddit_metadata: Dict(String, SubRedditMetaData),
+        subreddit_metadata: Dict(String, SubredditMetaData),
         topicmap: Dict(String, List(String)),
         subreddit_index: Dict(String, String),
-        subreddit_posts: Dict(String, List(Post))
+        subreddit_posts: Dict(String, List(gen_types.Post))
     )
 }
 

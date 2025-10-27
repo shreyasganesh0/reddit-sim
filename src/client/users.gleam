@@ -13,10 +13,11 @@ import gleam/erlang/process
 import gleam/erlang/atom
 import gleam/erlang/node
 
+import generated/generated_types as gen_types 
+import generated/generated_selectors as gen_select
+import generated/generated_decoders as gen_decode
 import types
-import selectors
 import utls
-import decoders
 import client/injector
 
 @external(erlang, "global", "whereis_name")
@@ -70,7 +71,7 @@ fn start(
     id: Int,
     engine_atom: atom.Atom,
     engine_node: atom.Atom
-    ) -> actor.StartResult(process.Subject(types.UserMessage)) {
+    ) -> actor.StartResult(process.Subject(gen_types.UserMessage)) {
 
     actor.new_with_initialiser(100000, fn(sub) {init(sub, id, engine_atom, engine_node)})
     |> actor.on_message(handle_user)
@@ -78,15 +79,15 @@ fn start(
 }
 
 fn init(
-    sub: process.Subject(types.UserMessage),
+    sub: process.Subject(gen_types.UserMessage),
     id: Int,
     engine_atom: atom.Atom,
     engine_node: atom.Atom
     ) -> Result(
             actor.Initialised(
                 types.UserState, 
-                types.UserMessage, 
-                process.Subject(types.UserMessage)
+                gen_types.UserMessage, 
+                process.Subject(gen_types.UserMessage)
                 ), 
                 String
          ) {
@@ -112,7 +113,7 @@ fn init(
 
         process.sleep(1000)
         let data = global_whereisname(engine_atom)
-        let pid = case decode.run(data, decoders.pid_decoder(data)) {
+        let pid = case decode.run(data, gen_decode.pid_decoder(data)) {
 
             Ok(engine_pid) -> {
 
@@ -137,7 +138,7 @@ fn init(
                          )
 
         let selector = process.new_selector() 
-        let selector_tag_list = get_selector_list() 
+        let selector_tag_list = gen_select.get_user_selector_list() 
 
         let selector = utls.create_selector(selector, selector_tag_list)
         |> process.select_map(sub, fn(msg) {msg})
@@ -146,39 +147,22 @@ fn init(
         |> actor.returning(sub)
         |> actor.selecting(selector)
 
-        //process.send(sub, types.UserTestMessage)
+        //process.send(sub, gen_types.UserTestMessage)
 
         Ok(ret)
 }
 
-fn get_selector_list() -> List(#(String, fn(dynamic.Dynamic) -> types.UserMessage, Int)) {
-            [
-                #("register_user_failed", selectors.register_user_failed_selector, 2),
-                #("register_user_success", selectors.register_user_success_selector, 1),
-                #("create_subreddit_success", selectors.create_subreddit_success_selector, 1),
-                #("create_subreddit_failed", selectors.create_subreddit_failed_selector, 2),
-                #("join_subreddit_success", selectors.join_subreddit_success_selector, 1),
-                #("join_subreddit_failed", selectors.join_subreddit_failed_selector, 2),
-                #("create_post_success", selectors.create_post_success_selector, 1),
-                #("create_post_failed", selectors.create_post_failed_selector, 2),
-            ]
-}
 fn handle_user(
     state: types.UserState,
-    msg: types.UserMessage
-    ) -> actor.Next(types.UserState, types.UserMessage) {
+    msg: gen_types.UserMessage
+    ) -> actor.Next(types.UserState, gen_types.UserMessage) {
 
     case msg {
 
-        types.UserTestMessage -> {
-
-            io.println("[CLIENT]: Entered client sending register user" <> int.to_string(state.id))
-            actor.continue(state)
-        }
 
 //---------------------------------------------- RegisterUser -------------------------------------------
 
-        types.InjectRegisterUser -> {
+        gen_types.InjectRegisterUser -> {
 
             io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting register user")
             utls.send_to_engine(#("register_user", self(), state.user_name, "test_pwd"))
@@ -186,13 +170,13 @@ fn handle_user(
 
         }
 
-        types.RegisterUserFailed(name, fail_reason) -> {
+        gen_types.RegisterUserFailed(name, fail_reason) -> {
 
             io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to register user " <> name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
             actor.continue(state)
         }
 
-        types.RegisterUserSuccess(uuid) -> {
+        gen_types.RegisterUserSuccess(uuid) -> {
 
             io.println("[CLIENT]: registered client with uuid: " <> uuid)
             let new_state = types.UserState(
@@ -202,14 +186,14 @@ fn handle_user(
             actor.continue(new_state)
         }
 
-//---------------------------------------------- CreateSubReddit ----------------------------------------
+//---------------------------------------------- CreateSubreddit ----------------------------------------
 
-        types.InjectCreateSubReddit -> {
+        gen_types.InjectCreateSubreddit -> {
 
             case state.uuid == "" {
 
                 True -> {
-                    process.send_after(state.self_sub, 1000, types.InjectCreateSubReddit)
+                    process.send_after(state.self_sub, 1000, gen_types.InjectCreateSubreddit)
                     Nil
                 }
 
@@ -223,27 +207,27 @@ fn handle_user(
             actor.continue(state)
         }
 
-        types.CreateSubRedditSuccess(subreddit_name) -> {
+        gen_types.CreateSubredditSuccess(subreddit_name) -> {
 
             io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully created subreddit " <> subreddit_name)
             actor.continue(state)
         }
 
-        types.CreateSubRedditFailed(subreddit_name, fail_reason) -> {
+        gen_types.CreateSubredditFailed(subreddit_name, fail_reason) -> {
 
             io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to create subreddit " <> subreddit_name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
             actor.continue(state)
         }
 
-//---------------------------------------------- JoinSubReddit ------------------------------------------
+//---------------------------------------------- JoinSubreddit ------------------------------------------
 
-        types.InjectJoinSubReddit -> {
+        gen_types.InjectJoinSubreddit -> {
 
             case state.uuid == "" {
 
                 True -> {
 
-                    process.send_after(state.self_sub, 2000, types.InjectJoinSubReddit)
+                    process.send_after(state.self_sub, 2000, gen_types.InjectJoinSubreddit)
                     Nil
                 }
 
@@ -257,13 +241,13 @@ fn handle_user(
             actor.continue(state)
         }
 
-        types.JoinSubRedditSuccess(subreddit_name) -> {
+        gen_types.JoinSubredditSuccess(subreddit_name) -> {
 
             io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully joined subreddit " <> subreddit_name)
             actor.continue(state)
         }
 
-        types.JoinSubRedditFailed(subreddit_name, fail_reason) -> {
+        gen_types.JoinSubredditFailed(subreddit_name, fail_reason) -> {
 
             io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to join subreddit " <> subreddit_name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
             actor.continue(state)
@@ -271,23 +255,23 @@ fn handle_user(
 
 //---------------------------------------------- CreatePost -------------------------------------------
 
-        types.InjectCreatePost -> {
+        gen_types.InjectCreatePost -> {
 
             case state.uuid == "" {
 
                 True -> {
 
-                    process.send_after(state.self_sub, 3000, types.InjectCreatePost)
+                    process.send_after(state.self_sub, 3000, gen_types.InjectCreatePost)
                     Nil
                 }
 
                 False -> {
 
-                    let post = types.Post(
+                    let post = gen_types.Post(
                                 title: "test title",
                                 body: "post_body"
                                )
-                    |> decoders.post_serializer
+                    |> gen_decode.post_serializer
                     io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting create post")
                     utls.send_to_engine(#("create_post", self(), state.uuid, "test_subreddit_user_1", post))
                     Nil
@@ -296,13 +280,13 @@ fn handle_user(
             actor.continue(state)
         }
         
-        types.CreatePostSuccess(subreddit_name) -> {
+        gen_types.CreatePostSuccess(subreddit_name) -> {
 
             io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully posted to subreddit " <> subreddit_name)
             actor.continue(state)
         }
 
-        types.CreatePostFailed(subreddit_name, fail_reason) -> {
+        gen_types.CreatePostFailed(subreddit_name, fail_reason) -> {
 
             io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to post to subreddit " <> subreddit_name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
             actor.continue(state)

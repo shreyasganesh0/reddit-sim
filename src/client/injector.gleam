@@ -8,11 +8,11 @@ import gleam/erlang/process
 
 import simplifile
 
-import types
+import generated/generated_types as gen_types 
 
 fn message_injector(
-    client_subs:  Dict(Int, process.Subject(types.UserMessage)),
-    message_client_map: Dict(types.UserMessage, List(Int)),
+    client_subs:  Dict(Int, process.Subject(gen_types.UserMessage)),
+    message_client_map: Dict(gen_types.UserMessage, List(Int)),
     ) -> Nil {
 
     //io.println("sending injection messages")
@@ -43,8 +43,8 @@ fn message_injector(
 }
 
 fn parse_config_file(
-    message_map: Dict(String, types.UserMessage)
-    ) -> Dict(types.UserMessage, List(Int)) {
+    message_map: Dict(String, gen_types.UserMessage)
+    ) -> Dict(gen_types.UserMessage, List(Int)) {
 
     let msg = case simplifile.read("./config/messages.shr") {
 
@@ -52,73 +52,55 @@ fn parse_config_file(
 
             let ret = dict.new()
 
-            string.split(string.trim(str), "\n")
-            |> list.fold(ret, fn(msg_dict, line) {
+            let msg_dict = string.split(string.trim(str), "\n")
+            |> list.fold(
+                ret, 
+                fn(msg_dict, line) {
 
-                             //io.println("curr line " <> line)
-                             let curr_kv = string.split(string.trim(line), ":")
-                             let k = types.UserTestMessage
-                             let v = []
+                    //io.println("curr line " <> line)
+                    let assert [k, v] = string.split(string.trim(line), ":")
 
-                             let #(k, v) =list.fold(curr_kv, #(k,v), fn(acc, a) {
+                    let tmp = []
+                    let v = string.split(v, ",")
+                    |> list.fold(
+                        tmp,
+                        fn(tmp_list, num) {
 
-                                                    let #(curr_k, _) = acc
-                                                    case curr_k == types.UserTestMessage {
+                            case int.parse(string.trim(num)) {
 
-                                                        True -> {
+                              Ok(number) -> {
+                    //io.println("curr num_list val " <> int.to_string(number))
+                                  [number, ..tmp_list]
+                              }
 
-                                                            //io.println("curr msg val " <> a)
+                              Error(_) -> {
 
-                                                            case dict.get(message_map, a) {
+                                  panic as "Config file had invalid type as number"
+                              }
+                           }
+                        }
+                       )
+                    let k = case dict.get(message_map, k) {
 
-                                                                Ok(msg) -> {
-
-                                                                    //echo msg
-                                                                    #(msg, [])
-                                                                }
-
-                                                                Error(_) -> {
-
-                                                                    io.println("Invalid message " <> a)
-                                                                    panic as "Invalid message type while parsing config file" 
-                                                                }
-                                                            }
-
-                                                        }
-
-                                                        False -> {
+                        Ok(msg) -> {
 
 
-                                                            let tmp = []
-                                                            let num_list = string.split(a, ",")
-                                                            |> list.fold(tmp, fn(tmp_list, num) {
-                                                                                case int.parse(
-                                                                                    string.trim(num)) {
+                            //echo msg
+                            msg 
+                        }
 
-                                                                                  Ok(number) -> {
-                                                                //io.println("curr num_list val " <> int.to_string(number))
-                                                                                      [number,
-                                                                                        ..tmp_list]
-                                                                                  }
+                        Error(_) -> {
 
-                                                                                  Error(_) -> {
+                            io.println("Invalid message " <> k)
+                            panic as "Invalid message type while parsing config file" 
+                        }
+                    }
 
-                                                                                      panic as "Config file had invalid type as number"
-                                                                                  }
-                                                                               }
-                                                                              }
-                                                               )
-                                                            //echo num_list
-                                                            #(curr_k, num_list)
-                                                        }
-                                                    }
-
-                                               }
-                             )
-
-                             dict.insert(msg_dict, k, v)
-                         }
+                dict.insert(msg_dict, k, v)
+                }
                )
+
+            msg_dict
         }
 
         Error(err) -> {
@@ -149,23 +131,13 @@ fn parse_config_file(
     msg
 }
 
-fn message_translator() -> Dict(String, types.UserMessage) {
-
-        dict.from_list([
-            #("register_user" ,types.InjectRegisterUser),
-            #("create_subreddit", types.InjectCreateSubReddit),
-            #("join_subreddit", types.InjectJoinSubReddit),
-            #("create_post", types.InjectCreatePost),
-            ])
-}
-    
 
 pub fn start_injection(
-    client_subs:  Dict(Int, process.Subject(types.UserMessage)),
+    client_subs:  Dict(Int, process.Subject(gen_types.UserMessage)),
     ) -> process.Pid {
 
     process.spawn(fn () {
-                    parse_config_file(message_translator())
+                    parse_config_file(gen_types.message_translator())
                     |> message_injector(client_subs, _)
                   }
     )

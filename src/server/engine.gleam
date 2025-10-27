@@ -4,7 +4,6 @@ import gleam/result
 import gleam/crypto
 import gleam/bit_array
 import gleam/option.{Some, None}
-import gleam/dynamic
 
 import gleam/otp/actor
 import gleam/otp/static_supervisor as supervisor
@@ -15,8 +14,9 @@ import gleam/erlang/atom
 
 import youid/uuid
 
-import types 
-import selectors
+import generated/generated_types as gen_types 
+import generated/generated_selectors as gen_select
+import types
 import utls
 
 @external(erlang, "global", "register_name")
@@ -34,7 +34,7 @@ pub fn create() -> Nil {
     Nil
 }
 
-fn start() -> actor.StartResult(types.EngineMessage) {
+fn start() -> actor.StartResult(process.Subject(gen_types.EngineMessage)) {
     
     actor.new_with_initialiser(1000, fn(sub) {init(sub)})
     |> actor.on_message(handle_engine)
@@ -42,8 +42,8 @@ fn start() -> actor.StartResult(types.EngineMessage) {
 }
 
 fn init(
-    sub: process.Subject(types.EngineMessage),
-    ) -> Result(actor.Initialised(types.EngineState, types.EngineMessage, types.EngineMessage), String) {
+    sub: process.Subject(gen_types.EngineMessage),
+    ) -> Result(actor.Initialised(types.EngineState, gen_types.EngineMessage, process.Subject(gen_types.EngineMessage)), String) {
 
     let init_state = types.EngineState(
                         self_sub: sub,
@@ -76,41 +76,26 @@ fn init(
     }
 
     let selector = process.new_selector() 
-    let selector_tag_list = get_selector_list()
+    let selector_tag_list = gen_select.get_engine_selector_list()
 
     let selector = utls.create_selector(selector, selector_tag_list)
 
     let ret = actor.initialised(init_state)
-    |> actor.returning(types.EngineTestMessage)
+    |> actor.returning(sub)
     |> actor.selecting(selector)
 
     Ok(ret)
 }
 
-fn get_selector_list() -> List(#(String, fn(dynamic.Dynamic) -> types.EngineMessage, Int)) {
-
-        [
-        #("register_user", selectors.register_user_selector, 3),
-        #("create_subreddit", selectors.create_subreddit_selector, 3),
-        #("join_subreddit", selectors.join_subreddit_selector, 3),
-        #("create_post", selectors.create_post_selector, 4)
-        ]
-}
 fn handle_engine(
     state: types.EngineState,
-    msg: types.EngineMessage,
-    ) -> actor.Next(types.EngineState, types.EngineMessage) {
+    msg: gen_types.EngineMessage,
+    ) -> actor.Next(types.EngineState, gen_types.EngineMessage) {
 
     case msg {
 
-        types.EngineTestMessage -> {
 
-            io.println("Started Engine...")
-            actor.continue(state)
-        }
-
-
-        types.RegisterUser(send_pid, username, password) -> {
+        gen_types.RegisterUser(send_pid, username, password) -> {
 
             io.println("[ENGINE]: recvd register user msg username: " <> username <> " password: "<> password)
 
@@ -158,7 +143,7 @@ fn handle_engine(
         }
 
 
-        types.CreateSubReddit(send_pid, uuid, subreddit_name) -> {
+        gen_types.CreateSubreddit(send_pid, uuid, subreddit_name) -> {
 
             let res = {
                 use _ <- result.try(utls.validate_request(send_pid, uuid, state.pidmap, state.user_metadata))
@@ -187,7 +172,7 @@ fn handle_engine(
                                         subreddit_metadata: dict.insert(
                                             state.subreddit_metadata,
                                             subreddit_uuid,
-                                            types.SubRedditMetaData(
+                                            types.SubredditMetaData(
                                                 name: subreddit_name,
                                                 creator_id: uuid 
                                             ),
@@ -212,7 +197,7 @@ fn handle_engine(
             actor.continue(new_state)
         }
 
-        types.JoinSubReddit(send_pid, uuid, subreddit_name) -> {
+        gen_types.JoinSubreddit(send_pid, uuid, subreddit_name) -> {
 
             let res = {
                 use username <- result.try(utls.validate_request(send_pid, uuid, state.pidmap, state.user_metadata))
@@ -288,7 +273,7 @@ fn handle_engine(
             actor.continue(new_state)
         }
 
-        types.CreatePost(send_pid, uuid, subreddit_name, post_data) -> {
+        gen_types.CreatePost(send_pid, uuid, subreddit_name, post_data) -> {
 
             let res = {
                 use username <- result.try(utls.validate_request(send_pid, uuid, state.pidmap, state.user_metadata))
