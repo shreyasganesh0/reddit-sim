@@ -47,13 +47,15 @@ fn init(
 
     let init_state = types.EngineState(
                         self_sub: sub,
-                        user_metadata: dict.new(),
-                        pidmap: dict.new(),
-                        subreddit_metadata: dict.new(),
-                        topicmap: dict.new(),
-                        user_index: dict.new(),
-                        subreddit_index: dict.new(),
-                        subreddit_posts: dict.new(),
+                        users_data: dict.new(),
+                        user_pid_map: dict.new(),
+                        subreddits_data: dict.new(),
+                        subreddit_users_map: dict.new(),
+                        user_rev_index: dict.new(),
+                        subreddit_rev_index: dict.new(),
+                        subreddit_posts_map: dict.new(),
+                        posts_data: dict.new(),
+                        comments_data: dict.new(),
                      )
 
     let engine_atom = atom.create("engine")
@@ -94,12 +96,12 @@ fn handle_engine(
 
     case msg {
 
-
+//------------------------------------------------------------------------------------------------------
         gen_types.RegisterUser(send_pid, username, password) -> {
 
             io.println("[ENGINE]: recvd register user msg username: " <> username <> " password: "<> password)
 
-            case dict.has_key(state.user_metadata, username) {
+            case dict.has_key(state.users_data, username) {
 
                 True -> {
 
@@ -118,20 +120,20 @@ fn handle_engine(
 
                     let new_state = types.EngineState(
                                         ..state,
-                                        user_metadata: dict.insert(
-                                                    state.user_metadata,
+                                        users_data: dict.insert(
+                                                    state.users_data,
                                                     uid,
-                                                    types.UserMetaData(
+                                                    types.User(
                                                         username, passhash, []
                                                     ),
                                                  ),
-                                        pidmap: dict.insert(
-                                                    state.pidmap,
+                                        user_pid_map: dict.insert(
+                                                    state.user_pid_map,
                                                     uid,
                                                     send_pid,
                                                 ),
-                                        user_index: dict.insert(
-                                                        state.user_index,
+                                        user_rev_index: dict.insert(
+                                                        state.user_rev_index,
                                                         username,
                                                         uid
                                                     )
@@ -143,11 +145,13 @@ fn handle_engine(
         }
 
 
+//------------------------------------------------------------------------------------------------------
+
         gen_types.CreateSubreddit(send_pid, uuid, subreddit_name) -> {
 
             let res = {
-                use _ <- result.try(utls.validate_request(send_pid, uuid, state.pidmap, state.user_metadata))
-                case dict.has_key(state.subreddit_index, subreddit_name) {
+                use _ <- result.try(utls.validate_request(send_pid, uuid, state.user_pid_map, state.users_data))
+                case dict.has_key(state.subreddit_rev_index, subreddit_name) {
 
                     False -> {
 
@@ -172,18 +176,18 @@ fn handle_engine(
                                         subreddit_metadata: dict.insert(
                                             state.subreddit_metadata,
                                             subreddit_uuid,
-                                            types.SubredditMetaData(
+                                            types.Subreddit(
                                                 name: subreddit_name,
                                                 creator_id: uuid 
                                             ),
                                         ),
-                                        subreddit_index: dict.insert(
-                                            state.subreddit_index,
+                                        subreddit_rev_index: dict.insert(
+                                            state.subreddit_rev_index,
                                             subreddit_name,
                                             subreddit_uuid,
                                         )
                                     )
-                    utls.send_to_pid(send_pid, #("create_subreddit_success", subreddit_name))
+                    utls.send_to_pid(send_pid, #("create_subreddit_success", subreddit_uuid))
                     new_state
                 }
 
@@ -197,13 +201,22 @@ fn handle_engine(
             actor.continue(new_state)
         }
 
+//------------------------------------------------------------------------------------------------------
+
         gen_types.JoinSubreddit(send_pid, uuid, subreddit_name) -> {
 
             let res = {
-                use username <- result.try(utls.validate_request(send_pid, uuid, state.pidmap, state.user_metadata))
+                use username <- result.try(
+                                    utls.validate_request(
+                                    send_pid,
+                                    uuid,
+                                    state.user_pid_map,
+                                    state.users_data
+                                    )
+                                )
                 use subreddit_uuid <- result.try(
                                         result.map_error(
-                                            dict.get(state.subreddit_index, subreddit_name),
+                                            dict.get(state.subreddit_rev_index, subreddit_name),
                                             fn(_) {"Subreddit does not exist"}
                                         )
                                     )
@@ -217,8 +230,8 @@ fn handle_engine(
                     io.println("[ENGINE]: username: " <> username <> "joining subreddit: " <> subreddituuid)
                     let new_state = types.EngineState(
                         ..state,
-                        topicmap: dict.upsert(
-                                    state.topicmap, 
+                        subreddit_users_map: dict.upsert(
+                                    state.subreddit_users_map, 
                                     subreddituuid,
                                     fn(maybe_list) {
 
@@ -236,8 +249,8 @@ fn handle_engine(
                                         }
                                     }
                                   ),
-                        user_metadata: dict.upsert(
-                                        state.user_metadata,
+                        users_data: dict.upsert(
+                                        state.users_data,
                                         uuid,
                                         fn(maybe_user) {
 
@@ -245,11 +258,11 @@ fn handle_engine(
 
                                                 None -> panic as "shouldnt be possible for user not to exist while joining"
 
-                                                Some(types.UserMetaData(
+                                                Some(types.User(
                                                         username, pass, subreddit_list
                                                     )) -> {
 
-                                                    types.UserMetaData(
+                                                    types.User(
                                                         username,
                                                         pass,
                                                         [subreddituuid, ..subreddit_list]
@@ -259,7 +272,7 @@ fn handle_engine(
                                         }
                                        )
                     )
-                    utls.send_to_pid(send_pid, #("subreddit_join_success", subreddit_name))
+                    utls.send_to_pid(send_pid, #("subreddit_join_success", subreddit_uuid))
                     new_state
                 }
 
@@ -273,16 +286,25 @@ fn handle_engine(
             actor.continue(new_state)
         }
 
-        gen_types.CreatePost(send_pid, uuid, subreddit_name, post_data) -> {
+//------------------------------------------------------------------------------------------------------
+
+        gen_types.CreatePost(send_pid, uuid, subreddit_id, post_data) -> {
 
             let res = {
-                use username <- result.try(utls.validate_request(send_pid, uuid, state.pidmap, state.user_metadata))
+                use username <- result.try(
+                                    utls.validate_request(
+                                    send_pid,
+                                    uuid,
+                                    state.user_pid_map,
+                                    state.users_data
+                                    )
+                                )
                 use subreddit_uuid <- result.try(
-                                    result.map_error(
-                                        dict.get(state.subreddit_index, subreddit_name),
-                                        fn(_) {"Subreddit does not exist"}
-                                    )
-                                    )
+                                        result.map_error(
+                                            dict.get(state.subreddits_data, subreddit_id),
+                                            fn(_) {"Subreddit does not exist"}
+                                        )
+                                     )
                 Ok(#(username, subreddit_uuid))
             }
 
@@ -290,28 +312,45 @@ fn handle_engine(
 
                 Ok(#(username, subreddit_uuid)) -> {
 
+                    let post_uuid = uuid.v4_string()
+                    let post_data = generated_types.Post(
+                                    ..post,
+                                    id: post_uuid
+                                  )
                     io.println("[ENGINE]: username: " <> username <> "creating post: " <> subreddit_uuid)
                     let new_state = types.EngineState(
                                         ..state,
-                                        subreddit_posts: dict.upsert(
-                                            state.subreddit_posts,
+                                        subreddit_posts_map: dict.upsert(
+                                            state.subreddit_posts_map,
                                             subreddit_uuid,
                                             fn(maybe_posts) {
 
                                                 case maybe_posts {
 
                                                     None -> {
-                                                        [post_data]
+                                                        [post_uuid]
                                                     }
 
                                                     Some(posts_list) -> {
-                                                        [post_data, ..posts_list]
+                                                        [post_uuid, ..posts_list]
                                                     }
                                                 }
                                             } 
                                         ),
+
+                                        post_subreddit_map: dict.insert(
+                                            state.postmap,
+                                            post_uuid,
+                                            subreddit_uuid
+                                        ),
+
+                                        posts_data: dict.insert(
+                                            state.posts_data,
+                                            post_uuid,
+                                            post_data
+                                        )
                                     )
-                    utls.send_to_pid(send_pid, #("create_post_success", subreddit_name))
+                    utls.send_to_pid(send_pid, #("create_post_success", subreddit_uuid))
                     new_state
                 }
 
@@ -321,6 +360,64 @@ fn handle_engine(
                     state
                 }
 
+            }
+
+            actor.continue(new_state)
+        }
+
+
+//------------------------------------------------------------------------------------------------------
+
+        generated_types.CreateComment(send_pid, uuid, commentable_id, comment) -> {
+
+            let res = {
+                use username <- result.try(
+                                    utls.validate_request(
+                                    send_pid,
+                                    uuid,
+                                    state.user_pid_map,
+                                    state.users_data
+                                    )
+                                )
+                use _exists <- result.try(
+                                    utls.check_comment_parent(
+                                        commentable_id,
+                                        state.posts_data,
+                                        state.comments_data,
+                                    )
+                                )
+                Ok(username)
+            }
+
+            let new_state = case res {
+
+                Ok(username) -> {
+
+                    let comment_uuid = uuid.v4_string()
+                    let comment = generated_types.Comment(
+                                    ..comment,
+                                    id:comment_uuid
+                                  )
+                    let new_state = generated_types.EngineMessage(
+                        ..state,
+                        parent_comment_map: dict.insert(
+                            commentable_id,
+                            comment_uuid,
+                        ),
+                        comments_data: dict.insert(
+                            comment_uuid,
+                            comment
+                        )
+                    )
+                    utls.send_to_pid(send_pid, #("create_comment_success", commentable_id)) 
+                    new_state
+                }
+
+                Error(reason) -> {
+
+                    utls.send_to_pid(send_pid, #("create_comment_failed", commentable_id, reason))
+                    state
+                }
             }
 
             actor.continue(new_state)

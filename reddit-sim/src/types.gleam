@@ -18,18 +18,20 @@ pub type UserState {
 }
 
 
-pub type UserMetaData {
+pub type User {
 
-    UserMetaData(
+    User(
+        id: String,
         username: String,
         passhash: BitArray,
         subreddit_membership_list: List(String),
     )
 }
 
-pub type SubredditMetaData {
+pub type Subreddit {
 
-    SubredditMetaData(
+    Subreddit(
+        id: String,
         name: String,
         creator_id: String,
     )
@@ -39,13 +41,15 @@ pub type EngineState {
 
     EngineState(
         self_sub: process.Subject(gen_types.EngineMessage),
-        user_metadata: Dict(String, UserMetaData),
-        user_index: Dict(String, String),
-        pidmap: Dict(String, process.Pid),
-        subreddit_metadata: Dict(String, SubredditMetaData),
-        topicmap: Dict(String, List(String)),
-        subreddit_index: Dict(String, String),
-        subreddit_posts: Dict(String, List(gen_types.Post))
+        users_data: Dict(String, User),
+        user_rev_index: Dict(String, String),
+        user_pid_map: Dict(String, process.Pid),
+        subreddits_data: Dict(String, Subreddit),
+        subreddit_users_map: Dict(String, List(String)),
+        subreddit_rev_index: Dict(String, String),
+        subreddit_posts_map: Dict(String, List(gen_types.Post)),
+        parent_comment_map: Dict(String, String),
+        comments_data: Dict(String, gen_types.Comment)
     )
 }
 

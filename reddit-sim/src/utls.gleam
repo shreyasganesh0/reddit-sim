@@ -96,3 +96,30 @@ pub fn validate_request(
         }
 }
 
+pub fn check_comment_parent(
+    parent_id: String,
+    posts_data: Dict(String, Post),
+    comments_data: Dict(String, Comment)
+    ) -> Result(Nil, Nil) {
+
+
+    case dict.has_key(posts_data, parent_id) {
+
+        True -> Ok(Nil)
+
+        False -> {
+
+            case dict.has_key(comments_data, parent_id) {
+
+                True -> Ok(Nil)
+
+                False -> {
+
+                    let reason = "parent was not in posts or comments" 
+                    Error(reason) 
+                }
+            }
+        }
+    }
+}
+

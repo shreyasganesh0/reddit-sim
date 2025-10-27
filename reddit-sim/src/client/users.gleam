@@ -207,10 +207,15 @@ fn handle_user(
             actor.continue(state)
         }
 
-        gen_types.CreateSubredditSuccess(subreddit_name) -> {
+        gen_types.CreateSubredditSuccess(subreddit_id) -> {
 
-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully created subreddit " <> subreddit_name)
-            actor.continue(state)
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully created subreddit " <> subreddit_id)
+            let new_state = types.UserState(
+                                ..state,
+                                subreddits: [subreddits_id, ..state.subreddits],
+                            )
+
+            actor.continue(new_state)
         }
 
         gen_types.CreateSubredditFailed(subreddit_name, fail_reason) -> {
@@ -241,10 +246,15 @@ fn handle_user(
             actor.continue(state)
         }
 
-        gen_types.JoinSubredditSuccess(subreddit_name) -> {
+        gen_types.JoinSubredditSuccess(subreddit_id) -> {
 
-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully joined subreddit " <> subreddit_name)
-            actor.continue(state)
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully joined subreddit " <> subreddit_id)
+            let new_state = types.UserState(
+                                ..state,
+                                subreddits: [subreddits_id, ..state.subreddits],
+                            )
+
+            actor.continue(new_state)
         }
 
         gen_types.JoinSubredditFailed(subreddit_name, fail_reason) -> {
@@ -255,6 +265,60 @@ fn handle_user(
 
 //---------------------------------------------- CreatePost -------------------------------------------
 
+        gen_types.InjectCreatePost -> {
+
+            case state.uuid == "" || state.subreddits == [] {
+
+                True -> {
+
+                    process.send_after(state.self_sub, 3000, gen_types.InjectCreatePost)
+                    Nil
+                }
+
+                False -> {
+
+                    let post = gen_types.Post(
+                                title: "test title",
+                                body: "post_body"
+                               )
+                    |> gen_decode.post_serializer
+                    io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting create post")
+                    utls.send_to_engine(
+                        #(
+                            "create_post",
+                            self(), 
+                            state.uuid,
+                            list.first(state.subreddits),
+                            post
+                        )
+                    )
+                    Nil
+                }
+            }
+            actor.continue(state)
+        }
+        
+        gen_types.CreatePostSuccess(post_id) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully posted to subreddit " <> subreddit_name)
+
+            let new_state = types.UserState(
+                                ..state,
+                                posts: [post_id, ..state.posts],
+                            )
+
+            actor.continue(new_state)
+        }
+
+        gen_types.CreatePostFailed(subreddit_name, fail_reason) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to post to subreddit " <> subreddit_name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+            actor.continue(state)
+        }
+
+    }
+
+//---------------------------------------------- CreateComment -------------------------------------------
         gen_types.InjectCreatePost -> {
 
             case state.uuid == "" {
@@ -273,7 +337,7 @@ fn handle_user(
                                )
                     |> gen_decode.post_serializer
                     io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting create post")
-                    utls.send_to_engine(#("create_post", self(), state.uuid, "test_subreddit_user_1", post))
+                    utls.send_to_engine(#("create_post", self(), state.uuid, ))
                     Nil
                 }
             }
