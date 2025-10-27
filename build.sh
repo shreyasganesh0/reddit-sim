@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd ../reddit-codegen
+cd reddit-codegen
 ./generate.sh
 cd ../reddit-sim
 gleam clean
