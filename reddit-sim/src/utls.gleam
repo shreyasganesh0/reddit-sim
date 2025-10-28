@@ -5,7 +5,7 @@ import gleam/result
 import gleam/dict.{type Dict}
 import gleam/erlang/atom
 
-import generated/generated_types
+import generated/generated_types as gen_types
 
 @external(erlang, "gleam_stdlib", "identity")
 pub fn unsafe_coerce(a: a) -> b
@@ -58,8 +58,8 @@ pub fn validate_request(
     sender_pid: process.Pid, 
     sender_uuid: String,
     pidmap: Dict(String, process.Pid), 
-    usermap: Dict(String, generated_types.User)
-    ) -> Result(generated_types.User, String) {
+    usermap: Dict(String, gen_types.User)
+    ) -> Result(gen_types.User, String) {
 
         use pid <- result.try(
                     result.map_error(
@@ -98,23 +98,53 @@ pub fn validate_request(
 
 pub fn check_comment_parent(
     parent_id: String,
-    posts_data: Dict(String, generated_types.Post),
-    comments_data: Dict(String, generated_types.Comment)
-    ) -> Result(Nil, String) {
+    posts_data: Dict(String, gen_types.Post),
+    comments_data: Dict(String, gen_types.Comment)
+    ) -> Result(#(String, gen_types.Commentable), String) {
 
-    echo posts_data
+    let def_post = gen_types.Post(
+                id: "",
+                title: "test title",
+                body: "post_body",
+                owner_id: "",
+                upvotes: 0,
+                downvotes: 0,
+               )
+                
+    let def_comment = gen_types.Comment(
+                    id: "",
+                    body: "comment_body",
+                    parent_id: "",
+                    owner_id: "",
+                    upvotes: 0,
+                    downvotes: 0,
+                   )
 
-    case dict.has_key(posts_data, parent_id) {
+    case dict.get(posts_data, parent_id) {
 
-        True -> Ok(Nil)
+        Ok(post) -> Ok(#(
+                        "post", 
+                        gen_types.Commentable(
+                            post: post,
+                            comment: def_comment,
+                        )
+                        )
+                    )
 
-        False -> {
+        Error(_) -> {
 
-            case dict.has_key(comments_data, parent_id) {
+            case dict.get(comments_data, parent_id) {
 
-                True -> Ok(Nil)
+                Ok(comment) -> Ok(#(
+                                "comment",
+                                gen_types.Commentable(
+                                    post: def_post,
+                                    comment: comment,
+                                )
+                                )
+                               )
 
-                False -> {
+                Error(_) -> {
 
                     let reason = "parent was not in posts or comments" 
                     Error(reason) 

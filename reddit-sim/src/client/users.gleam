@@ -281,7 +281,10 @@ fn handle_user(
                     let post = gen_types.Post(
                                 id: "",
                                 title: "test title",
-                                body: "post_body"
+                                body: "post_body",
+                                owner_id: "",
+                                upvotes: 0,
+                                downvotes: 0,
                                )
                     |> gen_decode.post_serializer
                     io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting create post")
@@ -326,7 +329,7 @@ fn handle_user(
 
                 True -> {
 
-                    process.send_after(state.self_sub, 5000, gen_types.InjectCreateComment)
+                    process.send_after(state.self_sub, 4000, gen_types.InjectCreateComment)
                     Nil
                 }
 
@@ -337,9 +340,12 @@ fn handle_user(
                                 id: "",
                                 body: "comment_body",
                                 parent_id: "",
+                                owner_id: "",
+                                upvotes: 0,
+                                downvotes: 0,
                                )
                     |> gen_decode.comment_serializer
-                    io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting create post")
+                    io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting create comment")
                     utls.send_to_engine(
                         #(
                             "create_comment",
@@ -364,6 +370,50 @@ fn handle_user(
         gen_types.CreateCommentFailed(parent_id, fail_reason) -> {
 
             io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to comment to parent " <> parent_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+            actor.continue(state)
+        }
+
+//---------------------------------------------- CreateVote -------------------------------------------
+
+        gen_types.InjectCreateVote -> {
+
+            case state.uuid == "" || state.posts == [] {
+
+                True -> {
+
+                    process.send_after(state.self_sub, 5000, gen_types.InjectCreateVote)
+                    Nil
+                }
+
+                False -> {
+
+                    let assert Ok(post_to_send) = list.first(state.posts)
+                    let vote_t = "up"
+                    io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting vote")
+                    utls.send_to_engine(
+                        #(
+                            "create_vote",
+                            self(), 
+                            state.uuid,
+                            post_to_send,
+                            vote_t
+                        )
+                    )
+                    Nil
+                }
+            }
+            actor.continue(state)
+        }
+        
+        gen_types.CreateVoteSuccess(parent_id) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully voted to parent " <> parent_id)
+            actor.continue(state)
+        }
+
+        gen_types.CreateVoteFailed(parent_id, fail_reason) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to vote to parent " <> parent_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
             actor.continue(state)
         }
 

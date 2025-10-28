@@ -125,7 +125,12 @@ fn handle_engine(
                                                     state.users_data,
                                                     uid,
                                                     gen_types.User(
-                                                        "", username, passhash, []
+                                                        id: uid, 
+                                                        username: username,
+                                                        passhash: passhash,
+                                                        subreddits_membership_list: [],
+                                                        post_karma: 0,
+                                                        comment_karma: 0,
                                                     ),
                                                  ),
                                         user_pid_map: dict.insert(
@@ -260,15 +265,12 @@ fn handle_engine(
 
                                                 None -> panic as "shouldnt be possible for user not to exist while joining"
 
-                                                Some(gen_types.User(
-                                                        uuid, username, pass, subreddit_list
-                                                    )) -> {
+                                                Some(user) -> {
 
                                                     gen_types.User(
-                                                        uuid,
-                                                        username,
-                                                        pass,
-                                                        [subreddituuid, ..subreddit_list]
+                                                        ..user,
+                                                        subreddits_membership_list:
+                                                        [subreddituuid, ..user.subreddits_membership_list]
                                                     )
                                                 }
                                             }
@@ -294,7 +296,7 @@ fn handle_engine(
         gen_types.CreatePost(send_pid, uuid, subreddit_id, post_data) -> {
 
             let res = {
-                use _ <- result.try(
+                use user <- result.try(
                                     utls.validate_request(
                                     send_pid,
                                     uuid,
@@ -308,16 +310,17 @@ fn handle_engine(
                                             fn(_) {"Subreddit does not exist"}
                                         )
                                      )
-                Ok(subreddit_id)
+                Ok(#(user,subreddit_id))
             }
 
             let new_state = case res {
 
-                Ok(subreddit_uuid) -> {
+                Ok(#(user, subreddit_uuid)) -> {
 
                     let post_uuid = uuid.v4_string()
                     let post_data = gen_types.Post(
                                     ..post_data,
+                                    owner_id: user.id,
                                     id: post_uuid
                                   )
                     io.println("[ENGINE]: creating post: " <> subreddit_uuid)
@@ -374,7 +377,7 @@ fn handle_engine(
         gen_types.CreateComment(send_pid, uuid, commentable_id, comment) -> {
 
             let res = {
-                use _username <- result.try(
+                use user <- result.try(
                                     utls.validate_request(
                                     send_pid,
                                     uuid,
@@ -389,16 +392,17 @@ fn handle_engine(
                                         state.comments_data,
                                     )
                                 )
-                Ok(Nil)
+                Ok(user)
             }
 
             let new_state = case res {
 
-                Ok(_) -> {
+                Ok(user) -> {
 
                     let comment_uuid = uuid.v4_string()
                     let comment = gen_types.Comment(
                                     ..comment,
+                                    owner_id: user.id,
                                     id:comment_uuid
                                   )
                     let new_state = gen_types.EngineState(
@@ -414,13 +418,212 @@ fn handle_engine(
                             comment
                         )
                     )
-                    utls.send_to_pid(send_pid, #("create_comment_success", commentable_id)) 
+                    utls.send_to_pid(send_pid, #("create_comment_success", comment_uuid)) 
                     new_state
                 }
 
                 Error(reason) -> {
 
                     utls.send_to_pid(send_pid, #("create_comment_failed", commentable_id, reason))
+                    state
+                }
+            }
+
+            actor.continue(new_state)
+        }
+
+//------------------------------------------------------------------------------------------------------
+
+        gen_types.CreateVote(send_pid, uuid, commentable_id, vote_t) -> {
+
+            let res = {
+                use _user <- result.try(
+                                    utls.validate_request(
+                                    send_pid,
+                                    uuid,
+                                    state.user_pid_map,
+                                    state.users_data
+                                    )
+                                )
+                use parent <- result.try(
+                                    utls.check_comment_parent(
+                                        commentable_id,
+                                        state.posts_data,
+                                        state.comments_data,
+                                    )
+                                )
+                Ok(parent)
+            }
+
+            let new_state = case res {
+
+                Ok(#(parent_t, parent)) -> {
+
+                    let new_state = case parent_t, vote_t {
+
+                        "post", "up" -> {
+
+                            echo parent.post.owner_id
+                            case dict.get(state.users_data, parent.post.owner_id) {
+
+                                Ok(user) -> {
+                                    gen_types.EngineState(
+                                        ..state,
+                                        posts_data: dict.insert(
+                                                        state.posts_data,
+                                                        commentable_id,
+                                                        gen_types.Post(
+                                                            ..parent.post,
+                                                            upvotes: parent.post.upvotes + 1,
+                                                        )
+                                                    ),
+                                        users_data: dict.insert(
+                                                        state.users_data,
+                                                        user.id,
+                                                        gen_types.User(
+                                                            ..user,
+                                                            post_karma: user.post_karma + 1,
+                                                        )
+                                                    )
+                                        )
+                                }
+
+                                Error(_) -> {
+
+                                    let reason = "owner of post was invalid"
+                                    utls.send_to_pid(send_pid,
+                                        #("create_vote_failed", commentable_id, reason))
+                                    state
+
+                                }
+                            }
+                        }
+                        "post", "down" -> {
+
+                            case dict.get(state.users_data, parent.post.owner_id) {
+
+                                Ok(user) -> {
+                                    gen_types.EngineState(
+                                        ..state,
+                                        posts_data: dict.insert(
+                                                        state.posts_data,
+                                                        commentable_id,
+                                                        gen_types.Post(
+                                                            ..parent.post,
+                                                            downvotes: parent.post.downvotes + 1,
+                                                        )
+                                                    ),
+                                        users_data: dict.insert(
+                                                        state.users_data,
+                                                        user.id,
+                                                        gen_types.User(
+                                                            ..user,
+                                                            post_karma: user.post_karma - 1,
+                                                        )
+                                                    )
+                                        )
+                                }
+
+                                Error(_) -> {
+
+                                    let reason = "owner of post was invalid"
+                                    utls.send_to_pid(send_pid,
+                                        #("create_vote_failed", commentable_id, reason))
+                                    state
+
+                                }
+                            }
+                        }
+                        "comment", "up" -> {
+
+                            case dict.get(state.users_data, parent.comment.owner_id) {
+
+                                Ok(user) -> {
+                                    gen_types.EngineState(
+                                        ..state,
+                                        comments_data: dict.insert(
+                                                        state.comments_data,
+                                                        commentable_id,
+                                                        gen_types.Comment(
+                                                            ..parent.comment,
+                                                            upvotes: parent.comment.upvotes + 1,
+                                                        )
+                                                    ),
+                                        users_data: dict.insert(
+                                                        state.users_data,
+                                                        user.id,
+                                                        gen_types.User(
+                                                            ..user,
+                                                            comment_karma: user.comment_karma + 1,
+                                                        )
+                                                    )
+                                        )
+                                }
+
+                                Error(_) -> {
+
+                                    let reason = "owner of post was invalid"
+                                    utls.send_to_pid(send_pid,
+                                        #("create_vote_failed", commentable_id, reason))
+                                    state
+
+                                }
+                            }
+                        }
+                        "comment", "down" -> {
+
+                            case dict.get(state.users_data, parent.comment.owner_id) {
+
+                                Ok(user) -> {
+                                    gen_types.EngineState(
+                                        ..state,
+                                        comments_data: dict.insert(
+                                                        state.comments_data,
+                                                        commentable_id,
+                                                        gen_types.Comment(
+                                                            ..parent.comment,
+                                                            downvotes: parent.comment.downvotes + 1,
+                                                        )
+                                                    ),
+                                        users_data: dict.insert(
+                                                        state.users_data,
+                                                        user.id,
+                                                        gen_types.User(
+                                                            ..user,
+                                                            comment_karma: user.comment_karma - 1,
+                                                        )
+                                                    )
+                                        )
+                                }
+
+                                Error(_) -> {
+
+                                    let reason = "owner of post was invalid"
+                                    utls.send_to_pid(send_pid,
+                                        #("create_vote_failed", commentable_id, reason))
+                                    state
+
+                                }
+                            }
+                        }
+
+                        _, _ -> {
+
+                            let reason = "illegal vote type"
+                            utls.send_to_pid(send_pid,
+                                #("create_vote_failed", commentable_id, reason))
+                            state
+                        }
+                    }
+
+                    utls.send_to_pid(send_pid, #("create_vote_success", commentable_id)) 
+                    new_state
+
+                }
+
+                Error(reason) -> {
+
+                    utls.send_to_pid(send_pid, #("create_vote_failed", commentable_id, reason))
                     state
                 }
             }
