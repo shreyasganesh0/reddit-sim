@@ -16,7 +16,6 @@ import gleam/erlang/node
 import generated/generated_types as gen_types 
 import generated/generated_selectors as gen_select
 import generated/generated_decoders as gen_decode
-import types
 import utls
 import client/injector
 
@@ -85,7 +84,7 @@ fn init(
     engine_node: atom.Atom
     ) -> Result(
             actor.Initialised(
-                types.UserState, 
+                gen_types.UserState, 
                 gen_types.UserMessage, 
                 process.Subject(gen_types.UserMessage)
                 ), 
@@ -128,13 +127,15 @@ fn init(
             }
         }
         
-        let init_state = types.UserState(
+        let init_state = gen_types.UserState(
                             id: id,
                             self_sub: sub,
                             engine_pid: pid,
                             engine_atom: engine_atom,
                             user_name: "user_" <> int.to_string(id),
-                            uuid: ""
+                            uuid: "",
+                            posts: [],
+                            subreddits: [],
                          )
 
         let selector = process.new_selector() 
@@ -153,9 +154,9 @@ fn init(
 }
 
 fn handle_user(
-    state: types.UserState,
+    state: gen_types.UserState,
     msg: gen_types.UserMessage
-    ) -> actor.Next(types.UserState, gen_types.UserMessage) {
+    ) -> actor.Next(gen_types.UserState, gen_types.UserMessage) {
 
     case msg {
 
@@ -179,7 +180,7 @@ fn handle_user(
         gen_types.RegisterUserSuccess(uuid) -> {
 
             io.println("[CLIENT]: registered client with uuid: " <> uuid)
-            let new_state = types.UserState(
+            let new_state = gen_types.UserState(
                                 ..state,
                                 uuid: uuid
                             )
@@ -210,9 +211,9 @@ fn handle_user(
         gen_types.CreateSubredditSuccess(subreddit_id) -> {
 
             io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully created subreddit " <> subreddit_id)
-            let new_state = types.UserState(
+            let new_state = gen_types.UserState(
                                 ..state,
-                                subreddits: [subreddits_id, ..state.subreddits],
+                                subreddits: [subreddit_id, ..state.subreddits],
                             )
 
             actor.continue(new_state)
@@ -249,9 +250,9 @@ fn handle_user(
         gen_types.JoinSubredditSuccess(subreddit_id) -> {
 
             io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully joined subreddit " <> subreddit_id)
-            let new_state = types.UserState(
+            let new_state = gen_types.UserState(
                                 ..state,
-                                subreddits: [subreddits_id, ..state.subreddits],
+                                subreddits: [subreddit_id, ..state.subreddits],
                             )
 
             actor.continue(new_state)
@@ -276,8 +277,9 @@ fn handle_user(
                 }
 
                 False -> {
-
+                    let assert Ok(subreddit_to_send) = list.first(state.subreddits)
                     let post = gen_types.Post(
+                                id: "",
                                 title: "test title",
                                 body: "post_body"
                                )
@@ -288,7 +290,7 @@ fn handle_user(
                             "create_post",
                             self(), 
                             state.uuid,
-                            list.first(state.subreddits),
+                            subreddit_to_send,
                             post
                         )
                     )
@@ -300,9 +302,9 @@ fn handle_user(
         
         gen_types.CreatePostSuccess(post_id) -> {
 
-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully posted to subreddit " <> subreddit_name)
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully posted to subreddit " <> post_id)
 
-            let new_state = types.UserState(
+            let new_state = gen_types.UserState(
                                 ..state,
                                 posts: [post_id, ..state.posts],
                             )
@@ -316,43 +318,52 @@ fn handle_user(
             actor.continue(state)
         }
 
-    }
 
 //---------------------------------------------- CreateComment -------------------------------------------
-        gen_types.InjectCreatePost -> {
+        gen_types.InjectCreateComment -> {
 
-            case state.uuid == "" {
+            case state.uuid == "" || state.posts == [] {
 
                 True -> {
 
-                    process.send_after(state.self_sub, 3000, gen_types.InjectCreatePost)
+                    process.send_after(state.self_sub, 5000, gen_types.InjectCreateComment)
                     Nil
                 }
 
                 False -> {
 
-                    let post = gen_types.Post(
-                                title: "test title",
-                                body: "post_body"
+                    let assert Ok(post_to_send) = list.first(state.posts)
+                    let comment = gen_types.Comment(
+                                id: "",
+                                body: "comment_body",
+                                parent_id: "",
                                )
-                    |> gen_decode.post_serializer
+                    |> gen_decode.comment_serializer
                     io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting create post")
-                    utls.send_to_engine(#("create_post", self(), state.uuid, ))
+                    utls.send_to_engine(
+                        #(
+                            "create_comment",
+                            self(), 
+                            state.uuid,
+                            post_to_send,
+                            comment
+                        )
+                    )
                     Nil
                 }
             }
             actor.continue(state)
         }
         
-        gen_types.CreatePostSuccess(subreddit_name) -> {
+        gen_types.CreateCommentSuccess(parent_id) -> {
 
-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully posted to subreddit " <> subreddit_name)
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully comment to parent " <> parent_id)
             actor.continue(state)
         }
 
-        gen_types.CreatePostFailed(subreddit_name, fail_reason) -> {
+        gen_types.CreateCommentFailed(parent_id, fail_reason) -> {
 
-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to post to subreddit " <> subreddit_name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to comment to parent " <> parent_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
             actor.continue(state)
         }
 

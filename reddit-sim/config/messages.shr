@@ -2,3 +2,4 @@ register_user: 1, 2, 3
 create_subreddit: 1
 join_subreddit: 2, 3
 create_post: 2
+create_comment: 2

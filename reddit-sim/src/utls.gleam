@@ -5,7 +5,7 @@ import gleam/result
 import gleam/dict.{type Dict}
 import gleam/erlang/atom
 
-import types
+import generated/generated_types
 
 @external(erlang, "gleam_stdlib", "identity")
 pub fn unsafe_coerce(a: a) -> b
@@ -58,8 +58,8 @@ pub fn validate_request(
     sender_pid: process.Pid, 
     sender_uuid: String,
     pidmap: Dict(String, process.Pid), 
-    usermap: Dict(String, types.UserMetaData)
-    ) -> Result(String, String) {
+    usermap: Dict(String, generated_types.User)
+    ) -> Result(generated_types.User, String) {
 
         use pid <- result.try(
                     result.map_error(
@@ -71,21 +71,21 @@ pub fn validate_request(
                         }
                     )
                    )
-        use types.UserMetaData(username, _, _) <- result.try(
-                                result.map_error(
-                                    dict.get(usermap, sender_uuid),
-                                    fn(_) {
-                                        let fail_reason = 
-                                            "UserId does not exist in username table"
-                                        fail_reason
-                                    }
-                                )
-                              )
+        use user <- result.try(
+                        result.map_error(
+                            dict.get(usermap, sender_uuid),
+                            fn(_) {
+                                let fail_reason = 
+                                    "UserId does not exist in username table"
+                                fail_reason
+                            }
+                        )
+                      )
         case pid == sender_pid {
 
             True -> {
 
-                Ok(username)
+                Ok(user)
             }
 
             False -> {
@@ -98,10 +98,11 @@ pub fn validate_request(
 
 pub fn check_comment_parent(
     parent_id: String,
-    posts_data: Dict(String, Post),
-    comments_data: Dict(String, Comment)
-    ) -> Result(Nil, Nil) {
+    posts_data: Dict(String, generated_types.Post),
+    comments_data: Dict(String, generated_types.Comment)
+    ) -> Result(Nil, String) {
 
+    echo posts_data
 
     case dict.has_key(posts_data, parent_id) {
 
