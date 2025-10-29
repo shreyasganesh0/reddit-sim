@@ -1,5 +1,6 @@
 import gleam/io
 import gleam/dict
+import gleam/list.{type Continue, type Stop}
 import gleam/result
 import gleam/crypto
 import gleam/bit_array
@@ -629,6 +630,146 @@ fn handle_engine(
             }
 
             actor.continue(new_state)
+        }
+
+//------------------------------------------------------------------------------------------------------
+
+        gen_types.GetFeed(send_pid, uuid) -> {
+
+            let res = {
+                use user <- result.try(
+                                    utls.validate_request(
+                                    send_pid,
+                                    uuid,
+                                    state.user_pid_map,
+                                    state.users_data
+                                    )
+                                )
+                Ok(user)
+            }
+
+            let new_state = case res {
+
+                Ok(user) -> {
+                    let posts_list = []
+                    let posts_list = list.fold(
+                        user.subreddits_membership_list,
+                        posts_list
+                        fn(posts_list, a) {
+
+                            let posts = get_posts_from_subreddit(a,
+                                state.subreddit_posts_map, state.posts_data, 1)
+
+                            list.append(posts, posts_list)
+                        }
+                    )
+
+                    utls.send_to_pid(send_pid, #("get_feed_success", posts_list))
+
+                }
+
+                Error(reason) -> {
+
+                    utls.send_to_pid(send_pid, #("get_feed_failed", user.id, reason))
+                    state
+                }
+
+            }
+            actor.continue(new_state)
+        }
+
+//------------------------------------------------------------------------------------------------------
+
+        // gen_types.GetSubredditFeed(send_pid, uuid, subreddit_id) -> {
+        //
+        //     let res = {
+        //         use user <- result.try(
+        //                             utls.validate_request(
+        //                             send_pid,
+        //                             uuid,
+        //                             state.user_pid_map,
+        //                             state.users_data
+        //                             )
+        //                         )
+        //         use _subreddit_uuid <- result.try(
+        //                                 result.map_error(
+        //                                     dict.get(state.subreddits_data, subreddit_id),
+        //                                     fn(_) {"Subreddit does not exist"}
+        //                                 )
+        //                              )
+        //         Ok(#(user,subreddit_id))
+        //     }
+        //
+        //     let new_state = case res {
+        //
+        //         Ok(user) -> {
+        //
+        //
+        //         }
+        //
+        //         Error(reason) -> {
+        //
+        //             utls.send_to_pid(send_pid, #("create_vote_failed", commentable_id, reason))
+        //             state
+        //         }
+        //
+        //     }
+        // }
+    }
+}
+
+
+fn get_posts_from_subreddit(
+    subreddit_id: String,
+    subreddit_posts_map: Dict(String, String),
+    posts_data: Dict(String, List(Post)),
+    k: Int
+    ) -> List(Post) {
+
+
+    case dict.get(subreddits_posts_map, subreddit_id) {
+
+        Ok(posts) -> {
+
+            let i = 0
+            let posts_list = []
+            let posts_list = list.fold_until(
+                posts,
+                #(post_list, i),
+                fn(tup, p) {
+
+                    let #(post_list, i) = tup
+
+                    case i < k {
+
+                        True -> {
+                            let p_l = dict.get(posts_data, p) {
+
+                                Ok(post) -> {
+
+                                    [post, ..post_list]
+                                }
+
+                                Error(_) -> {
+
+                                    post_list
+                                }
+                            }
+                            Continue(#(p_l, i + 1))
+                        }
+
+                        False -> {
+
+                            Stop(#(post_list, i + 1))
+                        }
+                    }
+                }
+            )
+        }
+
+        Error(_) -> {
+
+            []
         }
     }
 }
