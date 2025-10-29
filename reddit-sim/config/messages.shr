@@ -5,3 +5,4 @@ create_post: 2
 create_comment: 2
 create_vote: 2
 get_feed: 2
+get_subredditfeed: 2

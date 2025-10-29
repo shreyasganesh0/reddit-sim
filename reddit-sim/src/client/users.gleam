@@ -458,6 +458,49 @@ fn handle_user(
             io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to vote to parent " <> user_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
             actor.continue(state)
         }
+//---------------------------------------------- GetSubredditfeed ---------------------------------------------
+
+        gen_types.InjectGetSubredditfeed -> {
+
+            case state.uuid == "" || state.subreddits == [] {
+
+                True -> {
+
+                    process.send_after(state.self_sub, 5000, gen_types.InjectGetSubredditfeed)
+                    Nil
+                }
+
+                False -> {
+
+                    let assert Ok(subreddit_to_send) = list.first(state.subreddits)
+                    io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting vote")
+                    utls.send_to_engine(
+                        #(
+                            "get_subredditfeed",
+                            self(), 
+                            state.uuid,
+                            subreddit_to_send,
+                        )
+                    )
+                    Nil
+                }
+            }
+            actor.continue(state)
+        }
+        
+        gen_types.GetSubredditfeedSuccess(posts_list) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully voted to parent ") 
+
+            display_feed(posts_list)
+            actor.continue(state)
+        }
+
+        gen_types.GetSubredditfeedFailed(subreddit_id, fail_reason) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to vote to parent " <> subreddit_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+            actor.continue(state)
+        }
     }
 }
 

@@ -683,41 +683,48 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        // gen_types.GetSubredditFeed(send_pid, uuid, subreddit_id) -> {
-        //
-        //     let res = {
-        //         use user <- result.try(
-        //                             utls.validate_request(
-        //                             send_pid,
-        //                             uuid,
-        //                             state.user_pid_map,
-        //                             state.users_data
-        //                             )
-        //                         )
-        //         use _subreddit_uuid <- result.try(
-        //                                 result.map_error(
-        //                                     dict.get(state.subreddits_data, subreddit_id),
-        //                                     fn(_) {"Subreddit does not exist"}
-        //                                 )
-        //                              )
-        //         Ok(#(user,subreddit_id))
-        //     }
-        //
-        //     let new_state = case res {
-        //
-        //         Ok(user) -> {
-        //
-        //
-        //         }
-        //
-        //         Error(reason) -> {
-        //
-        //             utls.send_to_pid(send_pid, #("create_vote_failed", commentable_id, reason))
-        //             state
-        //         }
-        //
-        //     }
-        // }
+        gen_types.GetSubredditfeed(send_pid, uuid, subreddit_id) -> {
+
+            let res = {
+                use _user <- result.try(
+                                    utls.validate_request(
+                                    send_pid,
+                                    uuid,
+                                    state.user_pid_map,
+                                    state.users_data
+                                    )
+                                )
+                use _subreddit_uuid <- result.try(
+                                        result.map_error(
+                                            dict.get(state.subreddits_data, subreddit_id),
+                                            fn(_) {"Subreddit does not exist"}
+                                        )
+                                     )
+                Ok(subreddit_id)
+            }
+
+            let new_state = case res {
+
+                Ok(subreddit_uuid) -> {
+
+                    let posts_list = get_posts_from_subreddit(subreddit_uuid,
+                                state.subreddit_posts_map, state.posts_data, 5)
+
+                    let posts_list = posts_list|>list.map(gen_decoders.post_serializer)
+                    utls.send_to_pid(send_pid, #("get_subredditfeed_success", posts_list))
+                    state
+
+                }
+
+                Error(reason) -> {
+
+                    utls.send_to_pid(send_pid, #("get_subredditfeed_failed", subreddit_id, reason))
+                    state
+                }
+
+            }
+            actor.continue(new_state)
+        }
     }
 }
 
