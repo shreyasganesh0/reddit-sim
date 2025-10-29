@@ -425,13 +425,12 @@ fn handle_user(
 
                 True -> {
 
-                    process.send_after(state.self_sub, 5000, gen_types.InjectCreateVote)
+                    process.send_after(state.self_sub, 5000, gen_types.InjectGetFeed)
                     Nil
                 }
 
                 False -> {
 
-                    let vote_t = "up"
                     io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting vote")
                     utls.send_to_engine(
                         #(
@@ -448,7 +447,7 @@ fn handle_user(
         
         gen_types.GetFeedSuccess(posts_list) -> {
 
-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully voted to parent " <> parent_id)
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully voted to parent ") 
 
             display_feed(posts_list)
             actor.continue(state)
@@ -456,20 +455,20 @@ fn handle_user(
 
         gen_types.GetFeedFailed(user_id, fail_reason) -> {
 
-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to vote to parent " <> parent_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to vote to parent " <> user_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
             actor.continue(state)
         }
     }
 }
 
-fn display_feed(posts_list: List(Post)) {
+fn display_feed(posts_list: List(gen_types.Post)) {
 
     io.println("DISPLAYING FEED...\n")
     list.each(
         posts_list,
         fn(a) {
 
-            let Post(title: title, body: body) = a
+            let gen_types.Post(title: title, body: body, ..) = a
 
             io.println("TITLE: "<>title<>"\n")
             io.println("--------------------------------------------------------\n")

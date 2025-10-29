@@ -1,6 +1,6 @@
 import gleam/io
-import gleam/dict
-import gleam/list.{type Continue, type Stop}
+import gleam/dict.{type Dict}
+import gleam/list.{Continue, Stop}
 import gleam/result
 import gleam/crypto
 import gleam/bit_array
@@ -17,6 +17,7 @@ import youid/uuid
 
 import generated/generated_types as gen_types 
 import generated/generated_selectors as gen_select
+import generated/generated_decoders as gen_decoders
 import utls
 
 @external(erlang, "global", "register_name")
@@ -654,7 +655,7 @@ fn handle_engine(
                     let posts_list = []
                     let posts_list = list.fold(
                         user.subreddits_membership_list,
-                        posts_list
+                        posts_list,
                         fn(posts_list, a) {
 
                             let posts = get_posts_from_subreddit(a,
@@ -664,13 +665,15 @@ fn handle_engine(
                         }
                     )
 
+                    let posts_list = posts_list|>list.map(gen_decoders.post_serializer)
                     utls.send_to_pid(send_pid, #("get_feed_success", posts_list))
+                    state
 
                 }
 
                 Error(reason) -> {
 
-                    utls.send_to_pid(send_pid, #("get_feed_failed", user.id, reason))
+                    utls.send_to_pid(send_pid, #("get_feed_failed", uuid, reason))
                     state
                 }
 
@@ -721,21 +724,21 @@ fn handle_engine(
 
 fn get_posts_from_subreddit(
     subreddit_id: String,
-    subreddit_posts_map: Dict(String, String),
-    posts_data: Dict(String, List(Post)),
+    subreddit_posts_map: Dict(String, List(String)),
+    posts_data: Dict(String, gen_types.Post),
     k: Int
-    ) -> List(Post) {
+    ) -> List(gen_types.Post) {
 
 
-    case dict.get(subreddits_posts_map, subreddit_id) {
+    case dict.get(subreddit_posts_map, subreddit_id) {
 
         Ok(posts) -> {
 
             let i = 0
             let posts_list = []
-            let posts_list = list.fold_until(
+            let #(posts_list, _) = list.fold_until(
                 posts,
-                #(post_list, i),
+                #(posts_list, i),
                 fn(tup, p) {
 
                     let #(post_list, i) = tup
@@ -743,7 +746,7 @@ fn get_posts_from_subreddit(
                     case i < k {
 
                         True -> {
-                            let p_l = dict.get(posts_data, p) {
+                            let p_l = case dict.get(posts_data, p) {
 
                                 Ok(post) -> {
 
@@ -765,6 +768,7 @@ fn get_posts_from_subreddit(
                     }
                 }
             )
+            posts_list
         }
 
         Error(_) -> {
