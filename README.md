@@ -20,7 +20,6 @@ This project serves as a practical implementation of several fundamental princip
 ## Application Logic Flowchart
 
 This flowchart illustrates the complete program flow, from initial launch to the message passing between the client actors, the injector, and the engine.
-
 ```mermaid
 graph TD
     subgraph "Terminal 1: Server Node (engine@localhost)"
@@ -30,7 +29,7 @@ graph TD
         D --> E[supervisor.start]
         E --spawns--> F(Engine Actor)
         F --> G[engine.init]
-        G --> H[global_register("engine", PID)]
+        G --> H[global_register(&quot;engine&quot;, PID)]
         H --> I{engine.handle_engine (Loop)}
         I --On RegisterUser--> J[Update EngineState maps]
         J --> K[utls.send_to_pid(ClientPID, Success)]
@@ -44,7 +43,7 @@ graph TD
         O --> P[supervisor.start]
         P --spawns 3x--> Q(User Actor)
         Q --> R[users.init(id)]
-        R --> S[global_whereisname("engine")]
+        R --> S[global_whereisname(&quot;engine&quot;)]
         S --> T[Store EnginePID in UserState]
         T --> U{users.handle_user (Loop)}
         
@@ -62,7 +61,7 @@ graph TD
     subgraph "Network Communication (Distributed Erlang)"
         BB --TCP--> I
         K --TCP--> U[User Actor 1: Receives RegisterUserSuccess]
-        U --> CC[io.println("registered client...")]
+        U --> CC[io.println(&quot;registered client...&quot;)]
         CC --> U
     end
 ```
