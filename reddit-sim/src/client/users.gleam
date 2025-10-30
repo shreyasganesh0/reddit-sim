@@ -1,6 +1,7 @@
 import gleam/io
 import gleam/int
 import gleam/list
+import gleam/string
 import gleam/dict
 import gleam/dynamic/decode
 import gleam/dynamic
@@ -136,6 +137,8 @@ fn init(
                             uuid: "",
                             posts: [],
                             subreddits: [],
+                            users: [],
+                            dms: [],
                          )
 
         let selector = process.new_selector() 
@@ -492,8 +495,12 @@ fn handle_user(
 
             io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully voted to parent ") 
 
-            display_feed(posts_list)
-            actor.continue(state)
+            let posts = display_feed(posts_list)
+            let new_state = gen_types.UserState(
+                                ..state,
+                                posts: list.append(posts, state.posts)
+                            )
+            actor.continue(new_state)
         }
 
         gen_types.GetSubredditfeedFailed(subreddit_id, fail_reason) -> {
@@ -501,15 +508,216 @@ fn handle_user(
             io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to vote to parent " <> subreddit_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
             actor.continue(state)
         }
+
+//---------------------------------------------- SearchUser ---------------------------------------------
+
+        gen_types.InjectSearchUser -> {
+
+            case state.uuid == "" {
+
+                True -> {
+
+                    process.send_after(state.self_sub, 5000, gen_types.InjectSearchUser)
+                    Nil
+                }
+
+                False -> {
+
+                    io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting search user")
+                    utls.send_to_engine(
+                        #(
+                            "search_user",
+                            self(), 
+                            state.uuid,
+                            "user_"<>int.to_string({state.id + 1}),
+                        )
+                    )
+                    Nil
+                }
+            }
+            actor.continue(state)
+        }
+        
+        gen_types.SearchUserSuccess(user_id) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully found user" <> user_id) 
+
+            let new_state = gen_types.UserState(
+                                ..state,
+                                users: [user_id, ..state.users]
+                            )
+            actor.continue(new_state)
+        }
+
+        gen_types.SearchUserFailed(user_name, fail_reason) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to find user " <> user_name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+            actor.continue(state)
+        }
+
+//---------------------------------------------- StartDirectmessage ---------------------------------------------
+
+        gen_types.InjectStartDirectmessage -> {
+
+            case state.uuid == "" || state.users == [] {
+
+                True -> {
+
+                    process.send_after(state.self_sub, 5000, gen_types.InjectStartDirectmessage)
+                    Nil
+                }
+
+                False -> {
+
+                    let assert Ok(user_to_send) = list.first(state.users)
+                    io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting start dm")
+                    utls.send_to_engine(
+                        #(
+                            "start_directmessage",
+                            self(), 
+                            state.uuid,
+                            user_to_send,
+                            "test_dm"
+                        )
+                    )
+                    Nil
+                }
+            }
+            actor.continue(state)
+        }
+        
+        gen_types.StartDirectmessageSuccess(dm_id) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully started dm") 
+
+            let new_state = gen_types.UserState(
+                                ..state,
+                                dms: [dm_id, ..state.dms]
+                            )
+            actor.continue(new_state)
+        }
+
+        gen_types.StartDirectmessageFailed(to_id, fail_reason) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to start dm " <> to_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+            actor.continue(state)
+        }
+//---------------------------------------------- ReplyDirectmessage ---------------------------------------------
+
+        gen_types.InjectReplyDirectmessage -> {
+
+            case state.uuid == "" || state.dms == [] {
+
+                True -> {
+
+                    process.send_after(state.self_sub, 6000, gen_types.InjectReplyDirectmessage)
+                    Nil
+                }
+
+                False -> {
+
+                    let assert Ok(dm_to_send) = list.first(state.dms)
+                    io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting reply dm")
+                    utls.send_to_engine(
+                        #(
+                            "reply_directmessage",
+                            self(), 
+                            state.uuid,
+                            dm_to_send,
+                            "test_reply"
+                        )
+                    )
+                    Nil
+                }
+            }
+            actor.continue(state)
+        }
+        
+        gen_types.ReplyDirectmessageSuccess(dm_id) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully replied "<>dm_id) 
+
+            actor.continue(state)
+        }
+
+        gen_types.ReplyDirectmessageFailed(dm_id, fail_reason) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to reply " <> dm_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+            actor.continue(state)
+        }
+//---------------------------------------------- GetDirectmessages ---------------------------------------------
+
+        gen_types.InjectGetDirectmessages -> {
+
+            case state.uuid == "" || state.dms == []{
+
+                True -> {
+
+                    process.send_after(state.self_sub, 7000, gen_types.InjectGetDirectmessages)
+                    Nil
+                }
+
+                False -> {
+
+                    io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting get directmessages")
+                    utls.send_to_engine(
+                        #(
+                            "get_directmessages",
+                            self(), 
+                            state.uuid,
+                        )
+                    )
+                    Nil
+                }
+            }
+            actor.continue(state)
+        }
+        
+        gen_types.GetDirectmessagesSuccess(dms_list) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully got dms ") 
+
+            let dms = display_dms(dms_list)
+            let new_state = gen_types.UserState(
+                                ..state,
+                                dms: list.append(dms, state.dms)
+                            )
+            actor.continue(new_state)
+        }
+
+        gen_types.GetDirectmessagesFailed(user_id, fail_reason) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to get dms " <> user_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+            actor.continue(state)
+        }
     }
 }
 
-fn display_feed(posts_list: List(gen_types.Post)) {
+fn display_dms(dms_list: List(gen_types.Dm)) -> List(String) {
 
+    io.println("DISPLAYING DMS...\n")
+    let dm_id_list = []
+    list.fold(
+        dms_list,
+        dm_id_list,
+        fn(acc, a) {
+
+            io.println("Participants:"<>a.participants|>string.join(", "))
+            io.println("--------------------------------------------------------\n")
+            io.println("Messages:"<>a.msgs_list|>string.join("\n"))
+            io.println("\n--------------------------------------------------------\n")
+            [a.id, ..acc]
+        }
+    )
+}
+fn display_feed(posts_list: List(gen_types.Post)) -> List(String) {
+
+    let post_id_list = []
     io.println("DISPLAYING FEED...\n")
-    list.each(
+    list.fold(
         posts_list,
-        fn(a) {
+        post_id_list,
+        fn(acc, a) {
 
             let gen_types.Post(title: title, body: body, ..) = a
 
@@ -517,6 +725,7 @@ fn display_feed(posts_list: List(gen_types.Post)) {
             io.println("--------------------------------------------------------\n")
             io.println("BODY:\n\t"<>body)
             io.println("--------------------------------------------------------\n\n")
+            [a.id, ..acc]
         }
     )
 }

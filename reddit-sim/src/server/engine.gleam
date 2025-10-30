@@ -59,6 +59,7 @@ fn init(
                         comments_data: dict.new(),
                         parent_comment_map: dict.new(),
                         post_subreddit_map: dict.new(),
+                        dms_data: dict.new(),
                      )
 
     let engine_atom = atom.create("engine")
@@ -133,6 +134,7 @@ fn handle_engine(
                                                         subreddits_membership_list: [],
                                                         post_karma: 0,
                                                         comment_karma: 0,
+                                                        dms_list: [],
                                                     ),
                                                  ),
                                         user_pid_map: dict.insert(
@@ -719,6 +721,232 @@ fn handle_engine(
                 Error(reason) -> {
 
                     utls.send_to_pid(send_pid, #("get_subredditfeed_failed", subreddit_id, reason))
+                    state
+                }
+
+            }
+            actor.continue(new_state)
+        }
+
+//------------------------------------------------------------------------------------------------------
+
+        gen_types.SearchUser(send_pid, uuid, search_user) -> {
+
+            let res = {
+                use _user <- result.try(
+                                    utls.validate_request(
+                                    send_pid,
+                                    uuid,
+                                    state.user_pid_map,
+                                    state.users_data
+                                    )
+                                )
+                use search_id <- result.try(
+                                    result.map_error(
+                                        dict.get(state.user_rev_index, search_user),
+                                        fn(_) {"no user found for name"}
+                                        )
+                                    )
+                Ok(search_id)
+            }
+
+            let new_state = case res {
+
+                Ok(search_id) -> {
+                    utls.send_to_pid(send_pid, #("search_user_success", search_id))
+                    state
+
+                }
+
+                Error(reason) -> {
+
+                    utls.send_to_pid(send_pid, #("search_user_failed", search_user, reason))
+                    state
+                }
+
+            }
+            actor.continue(new_state)
+        }
+
+//------------------------------------------------------------------------------------------------------
+
+        gen_types.StartDirectmessage(send_pid, uuid, to_uuid, message) -> {
+
+            let res = {
+                use from_user <- result.try(
+                                    utls.validate_request(
+                                    send_pid,
+                                    uuid,
+                                    state.user_pid_map,
+                                    state.users_data
+                                    )
+                                )
+                use to_user <- result.try(
+                                result.map_error(
+                                    dict.get(state.users_data, to_uuid),
+                                    fn(_) {"invalid recipient id"}
+                                )
+                               )
+                Ok(#(from_user, to_user))
+            }
+
+            let new_state = case res {
+
+                Ok(#(from_user, to_user)) -> {
+
+                    let dm_id = uuid.v4_string()
+                    let dm = gen_types.Dm(
+                                id: dm_id,
+                                msgs_list: [from_user.username<>": "<>message],
+                                participants: [to_user.id, from_user.id],
+                             )
+
+                    let new_state = gen_types.EngineState(
+                                        ..state,
+                                        dms_data: dict.insert(state.dms_data, dm_id, dm),
+                                        users_data: dict.insert(
+                                                        state.users_data,
+                                                        from_user.id,
+                                                        gen_types.User(
+                                                            ..from_user,
+                                                            dms_list: [dm_id, ..from_user.dms_list]
+                                                        )
+                                                    )
+                                                    |> dict.insert(
+                                                        to_user.id,
+                                                        gen_types.User(
+                                                            ..to_user,
+                                                            dms_list: [dm_id, ..to_user.dms_list]
+                                                        )
+                                                    )
+                                    )
+                    utls.send_to_pid(send_pid, #("start_directmessage_success", dm_id))
+                    case dict.get(state.user_pid_map, to_user.id) {
+
+                        Ok(to_pid) -> {
+                            utls.send_to_pid(to_pid, #("start_directmessage_success", dm_id))
+                            Nil
+                        }
+                        Error(_) -> Nil
+                    }
+                    new_state
+
+                }
+
+                Error(reason) -> {
+
+                    utls.send_to_pid(send_pid, #("start_directmessage_failed", to_uuid, reason))
+                    state
+                }
+
+            }
+            actor.continue(new_state)
+        }
+
+//------------------------------------------------------------------------------------------------------
+
+        gen_types.ReplyDirectmessage(send_pid, uuid, dm_id, message) -> {
+
+            let res = {
+                use from_user <- result.try(
+                                    utls.validate_request(
+                                    send_pid,
+                                    uuid,
+                                    state.user_pid_map,
+                                    state.users_data
+                                    )
+                                )
+                use dm <- result.try(
+                            result.map_error(
+                                dict.get(state.dms_data, dm_id),
+                                fn(_) {"couldnt find dm for id"}
+                                )
+                            )
+                Ok(#(from_user, dm))
+            }
+
+            let new_state = case res {
+
+                Ok(#(from_user, dm)) -> {
+
+                    let new_state = gen_types.EngineState(
+                                        ..state,
+                                        dms_data: dict.insert(
+                                                    state.dms_data,
+                                                    dm_id,
+                                                    gen_types.Dm(
+                                                        ..dm,
+                                                        msgs_list: [
+                                                            from_user.username<>": "<>message,
+                                                            ..dm.msgs_list
+                                                            ]
+                                                    ) 
+                                                  ),
+                                    )
+                    utls.send_to_pid(send_pid, #("reply_directmessage_success", dm_id))
+                    new_state
+
+                }
+
+                Error(reason) -> {
+
+                    utls.send_to_pid(send_pid, #("reply_directmessage_failed", dm_id, reason))
+                    state
+                }
+
+            }
+            actor.continue(new_state)
+        }
+
+//------------------------------------------------------------------------------------------------------
+
+        gen_types.GetDirectmessages(send_pid, uuid) -> {
+
+            let res = {
+                use from_user <- result.try(
+                                    utls.validate_request(
+                                    send_pid,
+                                    uuid,
+                                    state.user_pid_map,
+                                    state.users_data
+                                    )
+                                )
+                Ok(from_user)
+            }
+
+            let new_state = case res {
+
+                Ok(from_user) -> {
+
+                    let dm_list = []
+                    let dms_list = list.fold(
+                        from_user.dms_list,
+                        dm_list,
+                        fn(acc, a) {
+
+                            case dict.get(state.dms_data, a) {
+
+                                Ok(dm) -> {
+
+                                    [dm, ..acc]
+                                }
+
+                                Error(_) -> {
+
+                                    acc
+                                }
+                            }
+                        }
+                    )
+                    |> list.map(gen_decoders.dm_serializer)
+                    utls.send_to_pid(send_pid, #("get_directmessages_success", dms_list))
+                    state
+
+                }
+
+                Error(reason) -> {
+
+                    utls.send_to_pid(send_pid, #("get_directmessages_failed", uuid, reason))
                     state
                 }
 

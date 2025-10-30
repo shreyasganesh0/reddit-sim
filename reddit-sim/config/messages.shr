@@ -6,3 +6,7 @@ create_comment: 2
 create_vote: 2
 get_feed: 2
 get_subredditfeed: 2
+search_user: 2
+start_directmessage: 2
+reply_directmessage: 3
+get_directmessages: 2, 3
