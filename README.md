@@ -29,39 +29,39 @@ graph TD
         D --> E[supervisor.start]
         E --spawns--> F(Engine Actor)
         F --> G[engine.init]
-        G --> H[global_register(&quot;engine&quot;, PID)]
-        H --> I{engine.handle_engine (Loop)}
+        G --> H["global_register('engine', PID)"]
+        H --> I{"engine.handle_engine (Loop)"}
         I --On RegisterUser--> J[Update EngineState maps]
-        J --> K[utls.send_to_pid(ClientPID, Success)]
+        J --> K["utls.send_to_pid(ClientPID, Success)"]
         K --> I
     end
 
     subgraph "Terminal 2: Client Node (client@localhost)"
         L[sh start_client.sh] --> M(gleam run -- client simulator 3)
         M --> N[reddit_sim.main]
-        N --> O[users.create(3)]
+        N --> O["users.create(3)"]
         O --> P[supervisor.start]
         P --spawns 3x--> Q(User Actor)
-        Q --> R[users.init(id)]
-        R --> S[global_whereisname(&quot;engine&quot;)]
+        Q --> R["users.init(id)"]
+        R --> S["global_whereisname('engine')"]
         S --> T[Store EnginePID in UserState]
-        T --> U{users.handle_user (Loop)}
+        T --> U{"users.handle_user (Loop)"}
         
         O --stores subs--> V[client_subs Map]
         O --starts--> W(Injector Process)
         W --> X[injector.parse_config_file]
         X --> Y[config/messages.shr]
-        Y --> Z[msg_map = {InjectRegisterUser: [1,2,3]...}]
+        Y --> Z["msg_map = {InjectRegisterUser: [1,2,3]...}"]
         Z --> AA[injector.message_injector]
         AA --uses--> V
         AA --sends msg--> U[User Actor 1: Receives InjectRegisterUser]
-        U --sends msg--> BB[utls.send_to_engine(...)]
+        U --sends msg--> BB["utls.send_to_engine(...)"]
     end
 
     subgraph "Network Communication (Distributed Erlang)"
         BB --TCP--> I
         K --TCP--> U[User Actor 1: Receives RegisterUserSuccess]
-        U --> CC[io.println(&quot;registered client...&quot;)]
+        U --> CC["io.println('registered client...')"]
         CC --> U
     end
 ```
