@@ -1,5 +1,5 @@
 import gleam/int
-import gleam/list
+import gleam/list.{Stop, Continue}
 import gleam/float
 import gleam/erlang/process
 import generated/generated_types as gen_types
@@ -32,19 +32,20 @@ pub fn create_cdf(n: Int) -> List(Float) {
 pub fn sample_zipf(cdf: List(Float)) -> Int {
 
     let r = float.random()
-    let len = list.length(cdf)
-    let ans = 1
-    let #(_, ans) = list.fold( 
+    let len = 0 
+    let ans = 0
+
+    let #(_, ans) = list.fold_until( 
         cdf,
         #(len, ans),
         fn(acc, a) {
 
-            let #(len, _) = acc
+            let #(len, ans) = acc
             case a >. r {
 
-                True -> #(len, len)
+                True -> Stop(#(len + 1, len))
 
-                False -> acc
+                False -> Continue(#(len + 1, ans))
             }
         }
     )
@@ -57,6 +58,7 @@ pub fn create_subreddits_list(
     sub: process.Subject(gen_types.UserMessage)) {
 
     process.send(sub, gen_types.InjectRegisterUser)
+    process.sleep(200)
     list.range(1, n)
     |> list.each(
         fn(_a) {

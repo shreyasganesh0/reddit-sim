@@ -109,6 +109,7 @@ pub fn check_comment_parent(
                 owner_id: "",
                 upvotes: 0,
                 downvotes: 0,
+                subreddit_id: "",
                )
                 
     let def_comment = gen_types.Comment(

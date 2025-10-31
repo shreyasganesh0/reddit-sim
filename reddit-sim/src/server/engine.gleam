@@ -181,6 +181,7 @@ fn handle_engine(
                 Ok(_) -> {
 
                     let subreddit_uuid = uuid.v4_string()
+                    io.println("[ENGINE]: created subreddit: " <> subreddit_uuid)
                     let new_state = gen_types.EngineState(
                                         ..state,
                                         subreddits_data: dict.insert(
@@ -214,7 +215,7 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.JoinSubreddit(send_pid, uuid, subreddit_name) -> {
+        gen_types.JoinSubreddit(send_pid, uuid, subreddit_id) -> {
 
             let res = {
                 use gen_types.User(username: username, ..) <- result.try(
@@ -225,13 +226,13 @@ fn handle_engine(
                                     state.users_data
                                     )
                                 )
-                use subreddit_uuid <- result.try(
+                use _subreddit <- result.try(
                                         result.map_error(
-                                            dict.get(state.subreddit_rev_index, subreddit_name),
+                                            dict.get(state.subreddits_data, subreddit_id),
                                             fn(_) {"Subreddit does not exist"}
                                         )
                                     )
-                Ok(#(username, subreddit_uuid))
+                Ok(#(username, subreddit_id))
             }
 
             let new_state = case res {
@@ -281,19 +282,115 @@ fn handle_engine(
                                         }
                                        )
                     )
-                    utls.send_to_pid(send_pid, #("join_subreddit_success", subreddituuid))
+                    utls.send_to_pid(send_pid, #("join_subreddit_success", subreddit_id))
                     new_state
                 }
 
                 Error(reason) -> {
 
-                    utls.send_to_pid(send_pid, #("join_subreddit_failed", subreddit_name, reason))
+                    utls.send_to_pid(send_pid, #("join_subreddit_failed", subreddit_id, reason))
                     state
                 }
             }
 
             actor.continue(new_state)
         }
+
+//------------------------------------------------------------------------------------------------------
+
+        gen_types.CreateRepost(send_pid, uuid, post_id) -> {
+
+            let res = {
+                use user <- result.try(
+                                    utls.validate_request(
+                                    send_pid,
+                                    uuid,
+                                    state.user_pid_map,
+                                    state.users_data
+                                    )
+                                )
+                use post <- result.try(
+                                        result.map_error(
+                                            dict.get(state.posts_data, post_id),
+                                            fn(_) {"post does not exist"}
+                                        )
+                                     )
+                Ok(#(user, post))
+            }
+
+            let new_state = case res {
+
+                Ok(#(user, post_data)) -> {
+
+                    let post_uuid = uuid.v4_string()
+                    let post_data = gen_types.Post(
+                                    ..post_data,
+                                    owner_id: user.id,
+                                    id: post_uuid
+                                  )
+
+                    case dict.get(state.subreddits_data, post_data.subreddit_id) {
+
+                        Ok(_) -> {
+
+                            io.println("[ENGINE]: creating repost: " <> post_uuid)
+                            let new_state = gen_types.EngineState(
+                                                ..state,
+                                                subreddit_posts_map: dict.upsert(
+                                                    state.subreddit_posts_map,
+                                                    post_data.subreddit_id,
+                                                    fn(maybe_posts) {
+
+                                                        case maybe_posts {
+
+                                                            None -> {
+                                                                [post_uuid]
+                                                            }
+
+                                                            Some(posts_list) -> {
+                                                                [post_uuid, ..posts_list]
+                                                            }
+                                                        }
+                                                    } 
+                                                ),
+
+                                                post_subreddit_map: dict.insert(
+                                                    state.post_subreddit_map,
+                                                    post_uuid,
+                                                    post_data.subreddit_id
+                                                ),
+
+                                                posts_data: dict.insert(
+                                                    state.posts_data,
+                                                    post_uuid,
+                                                    post_data
+                                                )
+                                            )
+                            utls.send_to_pid(send_pid, #("create_repost_success", post_uuid))
+                            new_state
+                        }
+
+                        Error(_) -> {
+
+                            let reason = "post was in a invalid state"
+                            utls.send_to_pid(send_pid, #("create_repost_failed", post_id, reason))
+                            state
+                        }
+                    }
+                }
+
+                Error(reason) -> {
+
+                    utls.send_to_pid(send_pid, #("create_repost_failed", post_id, reason))
+                    state
+                }
+
+            }
+
+            actor.continue(new_state)
+        }
+
+
 
 //------------------------------------------------------------------------------------------------------
 
@@ -324,6 +421,7 @@ fn handle_engine(
                     let post_uuid = uuid.v4_string()
                     let post_data = gen_types.Post(
                                     ..post_data,
+                                    subreddit_id: subreddit_uuid,
                                     owner_id: user.id,
                                     id: post_uuid
                                   )
