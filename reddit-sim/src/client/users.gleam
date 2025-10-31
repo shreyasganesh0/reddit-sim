@@ -18,7 +18,8 @@ import generated/generated_types as gen_types
 import generated/generated_selectors as gen_select
 import generated/generated_decoders as gen_decode
 import utls
-import client/injector
+//import client/injector
+import client/zipf
 
 @external(erlang, "global", "whereis_name")
 fn global_whereisname(name: atom.Atom) -> dynamic.Dynamic 
@@ -32,18 +33,33 @@ pub fn create(mode: String, num_users: Int) -> Nil {
     let engine_atom = atom.create("engine")
     let engine_node = atom.create("engine@localhost")
 
+    let cdf = case mode == "simulator" {
+        True -> {
+            let n = 100
+            let cdf = zipf.create_cdf(n)
+
+            //let _ = injector.start_injection(sub_list)
+            cdf
+        }
+
+        False -> {
+
+            []
+        }
+    }
     let sub_list = dict.new()
     let builder = supervisor.new(supervisor.OneForOne)
     let #(builder, sub_list) = list.range(1, num_users) 
     |> list.fold(#(builder, sub_list), fn(acc, a) {
 
                             let #(build, subs) = acc
-                            let res = start(a, engine_atom, engine_node)
+
+                            let res = start(a, engine_atom, engine_node, cdf, main_sub)
 
                             let assert Ok(sub) = res
                             #(
                                 supervisor.add(build, supervision.worker(fn() {res})), 
-                                dict.insert(subs, a, sub.data)
+                                dict.insert(subs, a - 1, sub.data)
                             )
                           }
         )
@@ -51,16 +67,50 @@ pub fn create(mode: String, num_users: Int) -> Nil {
     let _ = supervisor.start(builder)
 
     case mode == "simulator" {
+
         True -> {
-            let _ = injector.start_injection(sub_list)
-            Nil
+
+            let r_list = []
+            dict.fold(
+                sub_list,
+                r_list,
+                fn(acc, i, a) {
+
+                    case i == 0 {
+                        
+                        True -> {
+
+                            zipf.create_subreddits_list(100, a)
+
+                            let t = []
+
+                            io.println("sending creation messages")
+                            list.range(1, 100)
+                            |>list.fold(
+                                t,
+                                fn(acc, _a) {
+                                    [process.receive_forever(main_sub), ..acc]
+                                }
+                            )
+                        }
+
+                        False -> {
+
+                            process.send(a, gen_types.UpdateSubredditsList(acc))
+                            acc
+                        }
+
+                    }
+                }
+            )
         }
 
         False -> {
 
-            Nil
+            []
         }
     }
+
 
 
     process.receive_forever(main_sub)
@@ -70,10 +120,12 @@ pub fn create(mode: String, num_users: Int) -> Nil {
 fn start(
     id: Int,
     engine_atom: atom.Atom,
-    engine_node: atom.Atom
+    engine_node: atom.Atom,
+    cdf: List(Float),
+    main_sub: process.Subject(String)
     ) -> actor.StartResult(process.Subject(gen_types.UserMessage)) {
 
-    actor.new_with_initialiser(100000, fn(sub) {init(sub, id, engine_atom, engine_node)})
+    actor.new_with_initialiser(100000, fn(sub) {init(sub, id, engine_atom, engine_node, cdf, main_sub)})
     |> actor.on_message(handle_user)
     |> actor.start
 }
@@ -82,7 +134,9 @@ fn init(
     sub: process.Subject(gen_types.UserMessage),
     id: Int,
     engine_atom: atom.Atom,
-    engine_node: atom.Atom
+    engine_node: atom.Atom,
+    cdf: List(Float),
+    main_sub: process.Subject(String)
     ) -> Result(
             actor.Initialised(
                 gen_types.UserState, 
@@ -130,7 +184,9 @@ fn init(
         
         let init_state = gen_types.UserState(
                             id: id,
+                            zipf_rank: 1.0 /. int.to_float(id),
                             self_sub: sub,
+                            main_sub: main_sub,
                             engine_pid: pid,
                             engine_atom: engine_atom,
                             user_name: "user_" <> int.to_string(id),
@@ -139,6 +195,8 @@ fn init(
                             subreddits: [],
                             users: [],
                             dms: [],
+                            cdf: cdf,
+                            sub_count: 0,
                          )
 
         let selector = process.new_selector() 
@@ -166,6 +224,19 @@ fn handle_user(
 
 //---------------------------------------------- RegisterUser -------------------------------------------
 
+        gen_types.UpdateSubredditsList(subs) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " updating subreddits")
+            let new_state = gen_types.UserState(
+                                ..state,
+                                subreddits: list.append(subs, state.subreddits)
+                            )
+            actor.continue(new_state)
+        }
+
+
+//---------------------------------------------- RegisterUser -------------------------------------------
+
         gen_types.InjectRegisterUser -> {
 
             io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting register user")
@@ -174,11 +245,6 @@ fn handle_user(
 
         }
 
-        gen_types.RegisterUserFailed(name, fail_reason) -> {
-
-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to register user " <> name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
-            actor.continue(state)
-        }
 
         gen_types.RegisterUserSuccess(uuid) -> {
 
@@ -190,25 +256,36 @@ fn handle_user(
             actor.continue(new_state)
         }
 
+        gen_types.RegisterUserFailed(name, fail_reason) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to register user " <> name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+            actor.continue(state)
+        }
+
 //---------------------------------------------- CreateSubreddit ----------------------------------------
 
         gen_types.InjectCreateSubreddit -> {
 
-            case state.uuid == "" {
+            let new_state = case state.uuid == "" {
 
                 True -> {
                     process.send_after(state.self_sub, 1000, gen_types.InjectCreateSubreddit)
-                    Nil
+                    state
                 }
 
                 False -> {
 
                     io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting create sub reddit")
-                    utls.send_to_engine(#("create_subreddit", self(), state.uuid, "test_subreddit_" <> state.user_name))
-                    Nil
+                    utls.send_to_engine(#("create_subreddit", self(), state.uuid,
+                        "subreddit_"<>int.to_string(state.sub_count)))
+                     gen_types.UserState(
+                                        ..state,
+                                        sub_count: state.sub_count + 1
+                                    )
+                    
                 }
             }
-            actor.continue(state)
+            actor.continue(new_state)
         }
 
         gen_types.CreateSubredditSuccess(subreddit_id) -> {
@@ -218,6 +295,7 @@ fn handle_user(
                                 ..state,
                                 subreddits: [subreddit_id, ..state.subreddits],
                             )
+            process.send(state.main_sub, subreddit_id)
 
             actor.continue(new_state)
         }
@@ -602,6 +680,7 @@ fn handle_user(
             io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to start dm " <> to_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
             actor.continue(state)
         }
+
 //---------------------------------------------- ReplyDirectmessage ---------------------------------------------
 
         gen_types.InjectReplyDirectmessage -> {

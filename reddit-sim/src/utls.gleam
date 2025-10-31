@@ -153,4 +153,3 @@ pub fn check_comment_parent(
         }
     }
 }
-
