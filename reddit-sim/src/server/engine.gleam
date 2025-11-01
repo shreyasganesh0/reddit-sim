@@ -24,43 +24,30 @@ import utls
 fn global_register(name: atom.Atom, pid: process.Pid) -> atom.Atom 
 
 
-pub fn create() -> Nil {
+pub fn create(num_users: Int) -> Nil {
 
     let main_sub = process.new_subject()
     let _ = supervisor.new(supervisor.OneForOne)
-    |> supervisor.add(supervision.worker(fn() {start()}))
+    |> supervisor.add(supervision.worker(fn() {start(num_users, main_sub)})|> supervision.restart(supervision.Transient))
     |> supervisor.start
 
     process.receive_forever(main_sub)
     Nil
 }
 
-fn start() -> actor.StartResult(process.Subject(gen_types.EngineMessage)) {
+fn start(num_users, main_sub) -> actor.StartResult(process.Subject(gen_types.EngineMessage)) {
     
-    actor.new_with_initialiser(1000, fn(sub) {init(sub)})
+    actor.new_with_initialiser(1000, fn(sub) {init(sub, main_sub, num_users)})
     |> actor.on_message(handle_engine)
     |> actor.start
 }
 
 fn init(
     sub: process.Subject(gen_types.EngineMessage),
+    main_sub: process.Subject(String),
+    num_users: Int
     ) -> Result(actor.Initialised(gen_types.EngineState, gen_types.EngineMessage, process.Subject(gen_types.EngineMessage)), String) {
 
-    let init_state = gen_types.EngineState(
-                        self_sub: sub,
-                        users_data: dict.new(),
-                        user_pid_map: dict.new(),
-                        subreddits_data: dict.new(),
-                        subreddit_users_map: dict.new(),
-                        user_rev_index: dict.new(),
-                        subreddit_rev_index: dict.new(),
-                        subreddit_posts_map: dict.new(),
-                        posts_data: dict.new(),
-                        comments_data: dict.new(),
-                        parent_comment_map: dict.new(),
-                        post_subreddit_map: dict.new(),
-                        dms_data: dict.new(),
-                     )
 
     let engine_atom = atom.create("engine")
     let yes_atom = atom.create("yes")
@@ -80,6 +67,25 @@ fn init(
         }
         
     }
+    let init_state = gen_types.EngineState(
+                        self_sub: sub,
+                        main_sub: main_sub,
+                        users_data: dict.new(),
+                        user_pid_map: dict.new(),
+                        subreddits_data: dict.new(),
+                        subreddit_users_map: dict.new(),
+                        user_rev_index: dict.new(),
+                        subreddit_rev_index: dict.new(),
+                        subreddit_posts_map: dict.new(),
+                        posts_data: dict.new(),
+                        comments_data: dict.new(),
+                        parent_comment_map: dict.new(),
+                        post_subreddit_map: dict.new(),
+                        dms_data: dict.new(),
+                        shutdown_count: 0,
+                        num_users: num_users,
+                        metrics_pid: pid,
+                     )
 
     let selector = process.new_selector() 
     let selector_tag_list = gen_select.get_engine_selector_list()
@@ -100,6 +106,36 @@ fn handle_engine(
 
     case msg {
 
+        gen_types.ShutdownUser(_user) -> {
+
+            let count = state.shutdown_count + 1
+            io.println("[ENGINE]: recvd get shutdown")
+            case state.num_users > count {
+                
+                True -> {
+
+                    let state = gen_types.EngineState(
+                        ..state,
+                        shutdown_count: count 
+                    )
+                    actor.continue(state)
+                }
+
+                False -> {
+
+                    let users = dict.size(state.users_data)
+                    let posts = dict.size(state.posts_data)
+                    let comments = dict.size(state.comments_data)
+
+                    utls.send_to_pid(
+                      state.metrics_pid,
+                      #("engine_stats_reply", users, posts, comments)
+                    )
+                    process.send(state.main_sub, "")
+                    actor.stop()
+                }
+            }
+        }
 //------------------------------------------------------------------------------------------------------
 
         gen_types.MetricsEnginestats(send_pid) -> {
@@ -109,11 +145,16 @@ fn handle_engine(
             let posts = dict.size(state.posts_data)
             let comments = dict.size(state.comments_data)
 
+            let new_state = gen_types.EngineState(
+                ..state,
+                metrics_pid: send_pid,
+                )
+
             utls.send_to_pid(
               send_pid,
               #("engine_stats_reply", users, posts, comments)
             )
-            actor.continue(state)
+            actor.continue(new_state)
         }
 //------------------------------------------------------------------------------------------------------
         gen_types.RegisterUser(send_pid, username, password, req_id) -> {
@@ -580,7 +621,6 @@ fn handle_engine(
 
                         "post", "up" -> {
 
-                            echo parent.post.owner_id
                             case dict.get(state.users_data, parent.post.owner_id) {
 
                                 Ok(user) -> {

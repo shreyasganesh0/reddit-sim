@@ -27,18 +27,39 @@ pub fn main() -> Nil {
 
     let res = case argv.load().arguments {
 
-        [build_type] -> {
+        [build_type, num_users] -> {
 
+            use numusers <- result.try(fn() {
+                case int.parse(num_users) {
+
+                    Ok(users) -> {
+
+                        case users >= 1 {
+
+                            True -> Ok(users)
+
+                            False -> Error(InvalidArgs)  
+                        }
+                    }
+
+                    Error(_) -> { 
+
+                        Error(InvalidArgs)
+                    }
+                }
+            }())
+
+            
             case build_type {
 
                 "server" -> {
 
-                    Ok(#(Server, "", 0))
+                    Ok(#(Server, "", numusers, 0))
                 }
 
                 "metrics" -> {
 
-                    Ok(#(Metrics, "", 0))
+                    Ok(#(Metrics, "", numusers, 0))
                 }
                 "client" -> {
 
@@ -48,13 +69,13 @@ pub fn main() -> Nil {
 
                 _ -> {
 
-                    io.println("Invalid build type, Usage: gleam run [server|client] [numUsers]")
+                    io.println("Invalid build type, Usage: gleam run [server|metrics|client] numUsers [runTimeSeconds]")
                     Error(InvalidArgs)
                 }
             }
         }
 
-        [build_type, client_mode, num_users] -> {
+        [build_type, client_mode, num_users, run_time] -> {
 
             case build_type {
 
@@ -96,13 +117,14 @@ pub fn main() -> Nil {
                             }
                         }
                     }())
+                    use runtime <- result.try(result.map_error(int.parse(run_time), fn(_) {InvalidArgs}))
 
-                    Ok(#(Client, clientmode, numusers))
+                    Ok(#(Client, clientmode, numusers, runtime))
                 }
 
                 _ -> {
 
-                    io.println("Invalid build type, Usage: gleam run [server|metrics|client] [numUsers]")
+                    io.println("Invalid build type, Usage: gleam run [server|metrics|client] numUsers [runTimeSeconds]")
                     Error(InvalidArgs)
                 }
             }
@@ -116,23 +138,23 @@ pub fn main() -> Nil {
 
     case res {
 
-        Ok(#(build_type, client_mode, num_users)) -> {
+        Ok(#(build_type, client_mode, num_users, run_time)) -> {
 
             case build_type {
 
                 Server -> {
 
-                    engine.create()
+                    engine.create(num_users)
                 }
 
                 Client -> {
 
-                    users.create(client_mode, num_users)
+                    users.create(client_mode, num_users, run_time)
                 }
 
                 Metrics -> {
                     
-                    metrics.create()
+                    metrics.create(num_users)
                 }
             }
 

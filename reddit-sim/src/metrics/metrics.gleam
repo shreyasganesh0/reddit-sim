@@ -28,11 +28,14 @@ pub type MetricsState {
 
   MetricsState(
     self_sub: Subject(met_sel.MetricsMessage),
+    main_sub: Subject(Nil),
     latencies: Dict(String, List(Int)),
     action_counts: Dict(String, Int),
     engine_stats: Dict(String, Int),
     engine_pid: Pid,
-    start_time: timestamp.Timestamp
+    start_time: timestamp.Timestamp,
+    shutdown_count: Int,
+    num_users: Int,
   )
 }
 
@@ -45,21 +48,25 @@ fn global_whereisname(name: atom.Atom) -> dynamic.Dynamic
 @external(erlang, "erlang", "self")
 fn self() -> process.Pid
 
-pub fn create() -> Nil {
-    let _ = start()
+pub fn create(num_users: Int) -> Nil {
+    let main_sub = process.new_subject()
+    let _ = start(num_users, main_sub)
+    process.receive_forever(main_sub)
     Nil
 }
 
 
-fn start() -> actor.StartResult(Subject(met_sel.MetricsMessage)) {
+fn start(num_users: Int, main_sub) -> actor.StartResult(Subject(met_sel.MetricsMessage)) {
     
-    actor.new_with_initialiser(1000, fn(sub) {init(sub)})
+    actor.new_with_initialiser(1000, fn(sub) {init(sub, main_sub, num_users)})
     |> actor.on_message(handle_metrics)
     |> actor.start
 }
 
 fn init(
-    sub: Subject(met_sel.MetricsMessage)
+    sub: Subject(met_sel.MetricsMessage),
+    main_sub: Subject(Nil),
+    num_users: Int
     ) -> Result(
             actor.Initialised(
                 MetricsState,
@@ -131,11 +138,14 @@ fn init(
 
         let init_state = MetricsState(
             self_sub: sub,
+            main_sub: main_sub,
             latencies: dict.new(),
             action_counts: dict.new(),
             engine_stats: dict.new(),
             engine_pid: pid,
             start_time: timestamp.system_time(),
+            shutdown_count: 0,
+            num_users: num_users,
         )
 
         process.send_after(sub, 5000, met_sel.PollEngine)
@@ -161,6 +171,30 @@ fn handle_metrics(
     ) -> actor.Next(MetricsState, met_sel.MetricsMessage) {
 
     case msg {
+
+        met_sel.ShutdownUser -> {
+
+            let count = state.shutdown_count + 1
+            io.println("[METRICS]: recvd shutdown from user")
+            case count < state.num_users {
+
+                True -> {
+
+                    let state = MetricsState(
+                        ..state,
+                        shutdown_count: count,
+                    )
+                    actor.continue(state)
+                }
+
+                False ->{
+
+                    write_csv(state)
+                    process.send(state.main_sub, Nil)
+                    actor.stop()
+                }
+            }
+        }
 
         met_sel.RecordLatency(action, duration_ms) -> {
 

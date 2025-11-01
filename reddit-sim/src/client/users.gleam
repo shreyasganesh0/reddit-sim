@@ -30,7 +30,7 @@ fn global_whereisname(name: atom.Atom) -> dynamic.Dynamic
 @external(erlang, "erlang", "self")
 fn self() -> process.Pid
 
-pub fn create(mode: String, num_users: Int) -> Nil {
+pub fn create(mode: String, num_users: Int, run_time: Int) -> Nil {
 
     let main_sub = process.new_subject()
     let engine_atom = atom.create("engine")
@@ -86,7 +86,11 @@ pub fn create(mode: String, num_users: Int) -> Nil {
 
                             let assert Ok(sub) = res
                             #(
-                                supervisor.add(build, supervision.worker(fn() {res})), 
+                                supervisor.add(
+                                    build,
+                                    supervision.worker(fn() {res})
+                                    |> supervision.restart(supervision.Transient)
+                                ), 
                                 dict.insert(subs, a - 1, sub.data)
                             )
                           }
@@ -121,12 +125,14 @@ pub fn create(mode: String, num_users: Int) -> Nil {
                                 }
                             )
                             process.send(a, gen_types.InjectThinkingMessage)
+                            process.send_after(a, run_time, gen_types.InjectShutdownMessage)
                             l
                         }
 
                         False -> {
 
                             process.send(a, gen_types.UpdateSubredditsList(acc))
+                            process.send_after(a, run_time, gen_types.InjectShutdownMessage)
                             acc
                         }
 
@@ -141,7 +147,8 @@ pub fn create(mode: String, num_users: Int) -> Nil {
         }
     }
 
-    process.receive_forever(main_sub)
+    dict.each(sub_list, fn(_, _) {process.receive_forever(main_sub)})
+    io.println("SIMULATION COMPLETE>>>")
     Nil
 }
 
@@ -558,6 +565,15 @@ fn handle_user(
     ) -> actor.Next(gen_types.UserState, gen_types.UserMessage) {
 
     case msg {
+
+        gen_types.InjectShutdownMessage -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " disconnecting")
+            utls.send_to_engine(#("shutdown_user", state.user_name))
+            user_metrics.send_shutdown(state.metrics_pid)
+            process.send(state.main_sub, "")
+            actor.stop()
+        }
 
 //---------------------------------------------- RegisterUser -------------------------------------------
         gen_types.InjectDisconnectReconnect -> {

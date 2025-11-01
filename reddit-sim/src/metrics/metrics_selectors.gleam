@@ -14,6 +14,8 @@ pub type MetricsMessage {
   PollEngine
 
   WriteToCsv
+
+  ShutdownUser
 }
 
 pub fn metrics_selector_list() {
@@ -21,7 +23,8 @@ pub fn metrics_selector_list() {
     [
     #("engine_stats_reply", stats_selector, 3),
     #("record_latency", latency_selector, 2),
-    #("record_action", outcome_selector, 2)
+    #("record_action", outcome_selector, 2),
+    #("shutdown_user", shutdown_selector, 0),
     ]
 }
 
@@ -73,6 +76,12 @@ fn latency_selector(
 			panic as "Failed to parse message record latency"
 		}
 	}
+}
+fn shutdown_selector(
+	_data: dynamic.Dynamic
+	) -> MetricsMessage { 
+
+    ShutdownUser
 }
 
 fn outcome_selector(

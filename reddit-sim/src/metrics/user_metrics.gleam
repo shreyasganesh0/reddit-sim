@@ -10,6 +10,15 @@ import youid/uuid
 
 import utls
 
+pub fn send_shutdown(metrics_pid: Pid) {
+
+    utls.send_to_pid(
+      metrics_pid, 
+      #("shutdown_user")
+    )
+
+}
+
 pub fn send_timing_metrics(
     req_id: String,
     msg_typ: String,
