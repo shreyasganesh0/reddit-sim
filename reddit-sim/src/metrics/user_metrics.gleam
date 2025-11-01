@@ -24,7 +24,7 @@ pub fn send_timing_metrics(
 
         Error(_) -> end
     }
-    let latency_ms = {{timestamp.difference(end, start)|>duration.to_seconds} *. 1000.0} |> float.round
+    let latency_ms = {{timestamp.difference(start, end)|>duration.to_seconds} *. 1000.0} |> float.round
     utls.send_to_pid(
       metrics_pid, 
       #("record_latency", msg_typ, latency_ms)

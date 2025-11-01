@@ -230,7 +230,7 @@ fn handle_metrics(
 
 fn write_csv(state: MetricsState) -> Nil {
 
-    let elapsed_seconds = timestamp.difference(timestamp.system_time(), state.start_time) 
+    let elapsed_seconds = timestamp.difference(state.start_time, timestamp.system_time()) 
     |> duration.to_seconds
     |> float.round
 
