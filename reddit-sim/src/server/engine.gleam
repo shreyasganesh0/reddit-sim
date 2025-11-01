@@ -101,7 +101,22 @@ fn handle_engine(
     case msg {
 
 //------------------------------------------------------------------------------------------------------
-        gen_types.RegisterUser(send_pid, username, password) -> {
+
+        gen_types.MetricsEnginestats(send_pid) -> {
+
+            io.println("[ENGINE]: recvd get stats req")
+            let users = dict.size(state.users_data)
+            let posts = dict.size(state.posts_data)
+            let comments = dict.size(state.comments_data)
+
+            utls.send_to_pid(
+              send_pid,
+              #("engine_stats_reply", users, posts, comments)
+            )
+            actor.continue(state)
+        }
+//------------------------------------------------------------------------------------------------------
+        gen_types.RegisterUser(send_pid, username, password, req_id) -> {
 
             io.println("[ENGINE]: recvd register user msg username: " <> username <> " password: "<> password)
 
@@ -109,7 +124,7 @@ fn handle_engine(
 
                 True -> {
 
-                    utls.send_to_pid(send_pid, #("register_user_failed", username, "username has been taken"))
+                    utls.send_to_pid(send_pid, #("register_user_failed", username, "username has been taken", req_id))
                     actor.continue(state)
                 }
 
@@ -148,7 +163,7 @@ fn handle_engine(
                                                         uid
                                                     )
                                     )
-                    utls.send_to_pid(send_pid, #("register_user_success", uid))
+                    utls.send_to_pid(send_pid, #("register_user_success", uid, req_id))
                     actor.continue(new_state)
                 }
             }
@@ -157,7 +172,7 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.CreateSubreddit(send_pid, uuid, subreddit_name) -> {
+        gen_types.CreateSubreddit(send_pid, uuid, subreddit_name, req_id) -> {
 
             let res = {
                 use _ <- result.try(utls.validate_request(send_pid, uuid, state.user_pid_map, state.users_data))
@@ -199,13 +214,13 @@ fn handle_engine(
                                             subreddit_uuid,
                                         )
                                     )
-                    utls.send_to_pid(send_pid, #("create_subreddit_success", subreddit_uuid))
+                    utls.send_to_pid(send_pid, #("create_subreddit_success", subreddit_uuid, req_id))
                     new_state
                 }
 
                 Error(reason) -> {
 
-                    utls.send_to_pid(send_pid, #("create_subreddit_failed", subreddit_name, reason))
+                    utls.send_to_pid(send_pid, #("create_subreddit_failed", subreddit_name, reason, req_id))
                     state
                 }
             }
@@ -215,7 +230,7 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.JoinSubreddit(send_pid, uuid, subreddit_id) -> {
+        gen_types.JoinSubreddit(send_pid, uuid, subreddit_id, req_id) -> {
 
             let res = {
                 use gen_types.User(username: username, ..) <- result.try(
@@ -282,13 +297,13 @@ fn handle_engine(
                                         }
                                        )
                     )
-                    utls.send_to_pid(send_pid, #("join_subreddit_success", subreddit_id))
+                    utls.send_to_pid(send_pid, #("join_subreddit_success", subreddit_id, req_id))
                     new_state
                 }
 
                 Error(reason) -> {
 
-                    utls.send_to_pid(send_pid, #("join_subreddit_failed", subreddit_id, reason))
+                    utls.send_to_pid(send_pid, #("join_subreddit_failed", subreddit_id, reason, req_id))
                     state
                 }
             }
@@ -298,7 +313,7 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.CreateRepost(send_pid, uuid, post_id) -> {
+        gen_types.CreateRepost(send_pid, uuid, post_id, req_id) -> {
 
             let res = {
                 use user <- result.try(
@@ -366,14 +381,14 @@ fn handle_engine(
                                                     post_data
                                                 )
                                             )
-                            utls.send_to_pid(send_pid, #("create_repost_success", post_uuid))
+                            utls.send_to_pid(send_pid, #("create_repost_success", post_uuid, req_id))
                             new_state
                         }
 
                         Error(_) -> {
 
                             let reason = "post was in a invalid state"
-                            utls.send_to_pid(send_pid, #("create_repost_failed", post_id, reason))
+                            utls.send_to_pid(send_pid, #("create_repost_failed", post_id, reason, req_id))
                             state
                         }
                     }
@@ -381,7 +396,7 @@ fn handle_engine(
 
                 Error(reason) -> {
 
-                    utls.send_to_pid(send_pid, #("create_repost_failed", post_id, reason))
+                    utls.send_to_pid(send_pid, #("create_repost_failed", post_id, reason, req_id))
                     state
                 }
 
@@ -394,7 +409,7 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.CreatePost(send_pid, uuid, subreddit_id, post_data) -> {
+        gen_types.CreatePost(send_pid, uuid, subreddit_id, post_data, req_id) -> {
 
             let res = {
                 use user <- result.try(
@@ -458,13 +473,13 @@ fn handle_engine(
                                             post_data
                                         )
                                     )
-                    utls.send_to_pid(send_pid, #("create_post_success", post_uuid))
+                    utls.send_to_pid(send_pid, #("create_post_success", post_uuid, req_id))
                     new_state
                 }
 
                 Error(reason) -> {
 
-                    utls.send_to_pid(send_pid, #("create_post_failed", subreddit_id, reason))
+                    utls.send_to_pid(send_pid, #("create_post_failed", subreddit_id, reason, req_id))
                     state
                 }
 
@@ -476,7 +491,7 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.CreateComment(send_pid, uuid, commentable_id, comment) -> {
+        gen_types.CreateComment(send_pid, uuid, commentable_id, comment, req_id) -> {
 
             let res = {
                 use user <- result.try(
@@ -520,13 +535,13 @@ fn handle_engine(
                             comment
                         )
                     )
-                    utls.send_to_pid(send_pid, #("create_comment_success", comment_uuid)) 
+                    utls.send_to_pid(send_pid, #("create_comment_success", comment_uuid, req_id)) 
                     new_state
                 }
 
                 Error(reason) -> {
 
-                    utls.send_to_pid(send_pid, #("create_comment_failed", commentable_id, reason))
+                    utls.send_to_pid(send_pid, #("create_comment_failed", commentable_id, reason, req_id))
                     state
                 }
             }
@@ -536,7 +551,7 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.CreateVote(send_pid, uuid, commentable_id, vote_t) -> {
+        gen_types.CreateVote(send_pid, uuid, commentable_id, vote_t, req_id) -> {
 
             let res = {
                 use _user <- result.try(
@@ -594,7 +609,7 @@ fn handle_engine(
 
                                     let reason = "owner of post was invalid"
                                     utls.send_to_pid(send_pid,
-                                        #("create_vote_failed", commentable_id, reason))
+                                        #("create_vote_failed", commentable_id, reason, req_id))
                                     state
 
                                 }
@@ -630,7 +645,7 @@ fn handle_engine(
 
                                     let reason = "owner of post was invalid"
                                     utls.send_to_pid(send_pid,
-                                        #("create_vote_failed", commentable_id, reason))
+                                        #("create_vote_failed", commentable_id, reason, req_id))
                                     state
 
                                 }
@@ -666,7 +681,7 @@ fn handle_engine(
 
                                     let reason = "owner of post was invalid"
                                     utls.send_to_pid(send_pid,
-                                        #("create_vote_failed", commentable_id, reason))
+                                        #("create_vote_failed", commentable_id, reason, req_id))
                                     state
 
                                 }
@@ -702,7 +717,7 @@ fn handle_engine(
 
                                     let reason = "owner of post was invalid"
                                     utls.send_to_pid(send_pid,
-                                        #("create_vote_failed", commentable_id, reason))
+                                        #("create_vote_failed", commentable_id, reason, req_id))
                                     state
 
                                 }
@@ -713,19 +728,19 @@ fn handle_engine(
 
                             let reason = "illegal vote type"
                             utls.send_to_pid(send_pid,
-                                #("create_vote_failed", commentable_id, reason))
+                                #("create_vote_failed", commentable_id, reason, req_id))
                             state
                         }
                     }
 
-                    utls.send_to_pid(send_pid, #("create_vote_success", commentable_id)) 
+                    utls.send_to_pid(send_pid, #("create_vote_success", commentable_id, req_id)) 
                     new_state
 
                 }
 
                 Error(reason) -> {
 
-                    utls.send_to_pid(send_pid, #("create_vote_failed", commentable_id, reason))
+                    utls.send_to_pid(send_pid, #("create_vote_failed", commentable_id, reason, req_id))
                     state
                 }
             }
@@ -735,7 +750,7 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.GetFeed(send_pid, uuid) -> {
+        gen_types.GetFeed(send_pid, uuid, req_id) -> {
 
             let res = {
                 use user <- result.try(
@@ -766,14 +781,14 @@ fn handle_engine(
                     )
 
                     let posts_list = posts_list|>list.map(gen_decoders.post_serializer)
-                    utls.send_to_pid(send_pid, #("get_feed_success", posts_list))
+                    utls.send_to_pid(send_pid, #("get_feed_success", posts_list, req_id))
                     state
 
                 }
 
                 Error(reason) -> {
 
-                    utls.send_to_pid(send_pid, #("get_feed_failed", uuid, reason))
+                    utls.send_to_pid(send_pid, #("get_feed_failed", uuid, reason, req_id))
                     state
                 }
 
@@ -783,7 +798,7 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.GetSubredditfeed(send_pid, uuid, subreddit_id) -> {
+        gen_types.GetSubredditfeed(send_pid, uuid, subreddit_id, req_id) -> {
 
             let res = {
                 use _user <- result.try(
@@ -811,14 +826,14 @@ fn handle_engine(
                                 state.subreddit_posts_map, state.posts_data, 5)
 
                     let posts_list = posts_list|>list.map(gen_decoders.post_serializer)
-                    utls.send_to_pid(send_pid, #("get_subredditfeed_success", posts_list))
+                    utls.send_to_pid(send_pid, #("get_subredditfeed_success", posts_list, req_id))
                     state
 
                 }
 
                 Error(reason) -> {
 
-                    utls.send_to_pid(send_pid, #("get_subredditfeed_failed", subreddit_id, reason))
+                    utls.send_to_pid(send_pid, #("get_subredditfeed_failed", subreddit_id, reason, req_id))
                     state
                 }
 
@@ -828,7 +843,7 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.SearchUser(send_pid, uuid, search_user) -> {
+        gen_types.SearchUser(send_pid, uuid, search_user, req_id) -> {
 
             let res = {
                 use _user <- result.try(
@@ -851,14 +866,14 @@ fn handle_engine(
             let new_state = case res {
 
                 Ok(search_id) -> {
-                    utls.send_to_pid(send_pid, #("search_user_success", search_id))
+                    utls.send_to_pid(send_pid, #("search_user_success", search_id, req_id))
                     state
 
                 }
 
                 Error(reason) -> {
 
-                    utls.send_to_pid(send_pid, #("search_user_failed", search_user, reason))
+                    utls.send_to_pid(send_pid, #("search_user_failed", search_user, reason, req_id))
                     state
                 }
 
@@ -868,7 +883,7 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.StartDirectmessage(send_pid, uuid, to_uuid, message) -> {
+        gen_types.StartDirectmessage(send_pid, uuid, to_uuid, message, req_id) -> {
 
             let res = {
                 use from_user <- result.try(
@@ -918,11 +933,10 @@ fn handle_engine(
                                                         )
                                                     )
                                     )
-                    utls.send_to_pid(send_pid, #("start_directmessage_success", dm_id))
                     case dict.get(state.user_pid_map, to_user.id) {
 
                         Ok(to_pid) -> {
-                            utls.send_to_pid(to_pid, #("start_directmessage_success", dm_id))
+                            utls.send_to_pid(to_pid, #("start_directmessage_success", dm_id, req_id))
                             Nil
                         }
                         Error(_) -> Nil
@@ -933,7 +947,7 @@ fn handle_engine(
 
                 Error(reason) -> {
 
-                    utls.send_to_pid(send_pid, #("start_directmessage_failed", to_uuid, reason))
+                    utls.send_to_pid(send_pid, #("start_directmessage_failed", to_uuid, reason, req_id))
                     state
                 }
 
@@ -943,7 +957,7 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.ReplyDirectmessage(send_pid, uuid, dm_id, message) -> {
+        gen_types.ReplyDirectmessage(send_pid, uuid, dm_id, message, req_id) -> {
 
             let res = {
                 use from_user <- result.try(
@@ -981,14 +995,14 @@ fn handle_engine(
                                                     ) 
                                                   ),
                                     )
-                    utls.send_to_pid(send_pid, #("reply_directmessage_success", dm_id))
+                    utls.send_to_pid(send_pid, #("reply_directmessage_success", dm_id, req_id))
                     new_state
 
                 }
 
                 Error(reason) -> {
 
-                    utls.send_to_pid(send_pid, #("reply_directmessage_failed", dm_id, reason))
+                    utls.send_to_pid(send_pid, #("reply_directmessage_failed", dm_id, reason, req_id))
                     state
                 }
 
@@ -998,7 +1012,7 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.GetDirectmessages(send_pid, uuid) -> {
+        gen_types.GetDirectmessages(send_pid, uuid, req_id) -> {
 
             let res = {
                 use from_user <- result.try(
@@ -1037,14 +1051,14 @@ fn handle_engine(
                         }
                     )
                     |> list.map(gen_decoders.dm_serializer)
-                    utls.send_to_pid(send_pid, #("get_directmessages_success", dms_list))
+                    utls.send_to_pid(send_pid, #("get_directmessages_success", dms_list, req_id))
                     state
 
                 }
 
                 Error(reason) -> {
 
-                    utls.send_to_pid(send_pid, #("get_directmessages_failed", uuid, reason))
+                    utls.send_to_pid(send_pid, #("get_directmessages_failed", uuid, reason, req_id))
                     state
                 }
 

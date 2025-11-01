@@ -21,6 +21,7 @@ gleam_crypto = ">= 1.5.1 and < 2.0.0"
 youid = ">= 1.5.1 and < 2.0.0"
 simplifile = ">= 2.3.0 and < 3.0.0"
 reddit_codegen = {path = "../reddit-codegen"}
+gleam_time = ">= 1.4.0 and < 2.0.0"
 
 [dev-dependencies]
 gleeunit = ">= 1.0.0 and < 2.0.0"

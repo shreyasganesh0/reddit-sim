@@ -5,6 +5,7 @@ import argv
 
 import client/users
 import server/engine
+import metrics/metrics
 
 type ArgsError {
 
@@ -18,6 +19,8 @@ type BuildType {
     Server
 
     Client
+
+    Metrics
 }
 
 pub fn main() -> Nil {
@@ -33,6 +36,10 @@ pub fn main() -> Nil {
                     Ok(#(Server, "", 0))
                 }
 
+                "metrics" -> {
+
+                    Ok(#(Metrics, "", 0))
+                }
                 "client" -> {
 
                     io.println("Invalid use of client type, Usage: gleam run client numUsers") 
@@ -95,7 +102,7 @@ pub fn main() -> Nil {
 
                 _ -> {
 
-                    io.println("Invalid build type, Usage: gleam run [server|client] [numUsers]")
+                    io.println("Invalid build type, Usage: gleam run [server|metrics|client] [numUsers]")
                     Error(InvalidArgs)
                 }
             }
@@ -121,6 +128,11 @@ pub fn main() -> Nil {
                 Client -> {
 
                     users.create(client_mode, num_users)
+                }
+
+                Metrics -> {
+                    
+                    metrics.create()
                 }
             }
 
