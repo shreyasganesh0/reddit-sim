@@ -354,6 +354,95 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
+        gen_types.LeaveSubreddit(send_pid, uuid, subreddit_id, req_id) -> {
+
+            let res = {
+                use gen_types.User(username: username, ..) <- result.try(
+                                    utls.validate_request(
+                                    send_pid,
+                                    uuid,
+                                    state.user_pid_map,
+                                    state.users_data
+                                    )
+                                )
+                use _subreddit <- result.try(
+                                        result.map_error(
+                                            dict.get(state.subreddits_data, subreddit_id),
+                                            fn(_) {"Subreddit does not exist"}
+                                        )
+                                    )
+                Ok(#(username, subreddit_id))
+            }
+
+            let new_state = case res {
+
+                Ok(#(username, subreddituuid)) -> {
+
+                    io.println("[ENGINE]: username: " <> username <> "leaving subreddit: " <> subreddituuid)
+                    let new_state = gen_types.EngineState(
+                        ..state,
+                        subreddit_users_map: dict.upsert(
+                                    state.subreddit_users_map, 
+                                    subreddituuid,
+                                    fn(maybe_list) {
+
+                                        case maybe_list {
+
+                                            Some(uuid_list) -> {
+
+                                                list.drop_while(
+                                                    uuid_list,
+                                                    fn(a) {a==uuid}
+                                                )
+                                            }
+
+                                            None -> {
+
+                                                []
+                                            }
+                                        }
+                                    }
+                                  ),
+                        users_data: dict.upsert(
+                                        state.users_data,
+                                        uuid,
+                                        fn(maybe_user) {
+
+                                            case maybe_user {
+
+                                                None -> panic as "shouldnt be possible for user not to exist while leaving"
+
+                                                Some(user) -> {
+
+                                                    gen_types.User(
+                                                        ..user,
+                                                        subreddits_membership_list:
+                                                            list.drop_while(
+                                                                user.subreddits_membership_list,
+                                                                fn(a) {a==subreddituuid}
+                                                            )
+                                                    )
+                                                }
+                                            }
+                                        }
+                                       )
+                    )
+                    utls.send_to_pid(send_pid, #("leave_subreddit_success", subreddit_id, req_id))
+                    new_state
+                }
+
+                Error(reason) -> {
+
+                    utls.send_to_pid(send_pid, #("leave_subreddit_failed", subreddit_id, reason, req_id))
+                    state
+                }
+            }
+
+            actor.continue(new_state)
+        }
+
+//------------------------------------------------------------------------------------------------------
+
         gen_types.CreateRepost(send_pid, uuid, post_id, req_id) -> {
 
             let res = {

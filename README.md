@@ -1,5 +1,6 @@
 # Reddit-Sim: A Distributed Reddit Simulator in Gleam
 
+
 This project is an excellent demonstration of building a distributed, fault-tolerant application using Gleam and the underlying Erlang OTP framework. It simulates a basic Reddit-like system with a central server (the "engine") [cite: engine.gleam], multiple concurrent clients (the "users") [cite: users.gleam], and a dedicated metrics collector [cite: shreyasganesh0/reddit-sim/reddit-sim-b6fa65f810ae2ee592dc94d80a4d00a645790829/reddit-sim/src/metrics/metrics.gleam]. The entire system is built on the actor model, enabling robust state management and asynchronous communication between isolated processes.
 
 ## Core Concepts & Architectural Learnings

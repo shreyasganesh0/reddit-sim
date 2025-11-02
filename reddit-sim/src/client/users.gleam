@@ -323,7 +323,8 @@ fn get_fsm_actions(state: gen_types.UserState) -> List(gen_types.UserMessage) {
 
                 True -> possible 
 
-                False -> [gen_types.InjectCreateRepost, gen_types.InjectCreatePost, ..possible]
+                False -> [gen_types.InjectCreateRepost, gen_types.InjectCreatePost,
+                            gen_types.InjectLeaveSubreddit, ..possible]
             } 
 
             let possible = case !list.is_empty(state.posts) {
@@ -361,6 +362,7 @@ fn filter_by_user_type(role: String) -> List(gen_types.UserMessage) {
 
             [
             gen_types.InjectJoinSubreddit,
+            gen_types.InjectLeaveSubreddit,
             gen_types.InjectGetFeed,
             gen_types.InjectGetSubredditfeed,
             gen_types.InjectCreateComment,
@@ -378,6 +380,7 @@ fn filter_by_user_type(role: String) -> List(gen_types.UserMessage) {
             gen_types.InjectCreateRepost,
             gen_types.InjectCreateSubreddit,
             gen_types.InjectJoinSubreddit,
+            gen_types.InjectLeaveSubreddit,
             gen_types.InjectGetFeed,
             gen_types.InjectGetSubredditfeed,
             gen_types.InjectCreateComment,
@@ -393,6 +396,7 @@ fn filter_by_user_type(role: String) -> List(gen_types.UserMessage) {
 
             [
             gen_types.InjectJoinSubreddit,
+            gen_types.InjectLeaveSubreddit,
             gen_types.InjectGetFeed,
             gen_types.InjectGetSubredditfeed,
             gen_types.InjectSearchUser,
@@ -512,8 +516,15 @@ fn filter_by_action_type() -> gen_types.UserMessage {
 
                                         True -> gen_types.InjectSearchUser
 
-                                        False -> gen_types.InjectJoinSubreddit
+                                        False -> {
 
+                                            case in_r < 0.998 {
+
+                                                True -> gen_types.InjectJoinSubreddit
+
+                                                False -> gen_types.InjectLeaveSubreddit
+                                            }
+                                        }
                                     }
                                 }
                             } 
@@ -755,6 +766,60 @@ fn handle_user(
         gen_types.JoinSubredditFailed(subreddit_id, fail_reason, req_id) -> {
 
             io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to join subreddit " <> subreddit_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+
+            utls.send_to_pid(
+                state.metrics_pid, 
+                #("record_action", "join_subreddit", "failed")
+            )
+            let new_pending = dict.drop(state.pending_reqs, [req_id])
+            let state = gen_types.UserState(
+                                ..state,
+                                pending_reqs: new_pending,
+                            )
+            actor.continue(state)
+        }
+
+//---------------------------------------------- JoinSubreddit ------------------------------------------
+        gen_types.InjectLeaveSubreddit -> {
+
+            let subreddit_id = zipf.sample_zipf(state.cdf)
+            |> find_subreddit_to_send(state.subreddits)
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting leave subreddit")
+
+            let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
+
+            let state = gen_types.UserState(
+                ..state,
+                pending_reqs: new_pending,
+            )
+            utls.send_to_engine(#("leave_subreddit", self(), state.uuid, subreddit_id, req_id))
+            actor.continue(state)
+        }
+
+        gen_types.LeaveSubredditSuccess(subreddit_id, req_id) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully left subreddit " <> subreddit_id)
+
+            let new_pending = user_metrics.send_timing_metrics(
+                req_id, "leave_subreddit", state.pending_reqs, state.metrics_pid)
+
+            let new_state = gen_types.UserState(
+                                ..state,
+                                pending_reqs: new_pending,
+                                subreddits: 
+                                    list.drop_while(
+                                        state.subreddits,
+                                        fn(a) {a==subreddit_id},
+                                    )
+                            )
+
+            actor.continue(new_state)
+        }
+
+        gen_types.LeaveSubredditFailed(subreddit_id, fail_reason, req_id) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to leave subreddit " <> subreddit_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
 
             utls.send_to_pid(
                 state.metrics_pid, 
