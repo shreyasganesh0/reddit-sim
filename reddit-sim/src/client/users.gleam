@@ -518,7 +518,7 @@ fn filter_by_action_type() -> gen_types.UserMessage {
 
                                         False -> {
 
-                                            case in_r < 0.998 {
+                                            case in_r <. 0.998 {
 
                                                 True -> gen_types.InjectJoinSubreddit
 
