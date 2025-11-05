@@ -323,13 +323,13 @@ fn get_fsm_actions(state: gen_types.UserState) -> List(gen_types.UserMessage) {
 
                 True -> possible 
 
-                False -> [gen_types.InjectCreateRepost, gen_types.InjectCreatePost,
+                False -> [ gen_types.InjectCreatePost,
                             gen_types.InjectLeaveSubreddit, ..possible]
             } 
 
             let possible = case !list.is_empty(state.posts) {
 
-                True -> [gen_types.InjectCreateComment, gen_types.InjectCreateVote, ..possible]
+                True -> [gen_types.InjectCreateRepost, gen_types.InjectCreateComment, gen_types.InjectCreateVote, ..possible]
 
                 False -> possible
             }

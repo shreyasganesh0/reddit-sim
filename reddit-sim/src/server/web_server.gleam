@@ -1,56 +1,52 @@
 import mist
+import gleam/http
 import gleam/http/request
 import gleam/http/response
+import gleam/dict.{type Dict}
+import gleam/result
 
 import gleam/erlang/process
 
-import gleam/bytes_tree
-
 import server/api_handlers
 
-fn request_handler(req: request.Request(mist.Connection)) -> response.Response(mist.ResponseData) {
+import generated/generated_types as gen_types
+
+fn request_handler(
+    req: request.Request(mist.Connection), 
+    engine_sub: process.Subject(gen_types.EngineMessage)
+    ) -> response.Response(mist.ResponseData) {
     
-    let resp_404 = response.new(404)
-    |> response.set_body(mist.Bytes(bytes_tree.new()))
 
-    case request.path_segments(req) {
+    let endpoint = http.method_to_string(req.method) <> "-" <> req.path
 
+    let api_func = path_handlers_list()
+    |> dict.get(endpoint)
+    |> result.unwrap(api_handlers.error_page_not_found)
 
-        ["echo"] -> {
-
-            api_handlers.echo_resp(req)
-        }
-
-        ["api", "v1", ..rest] -> {
-
-            case rest {
-
-                ["register"] -> {
-
-                    api_handlers.register_user(req)
-
-                }
-
-                _ -> resp_404
-            }
-        }
-        
-        _ -> {
-
-            resp_404
-        }
-
-        
-    }
+    api_func(req, engine_sub)
 }
 
 
 
-pub fn main() {
+pub fn start(engine_sub: process.Subject(gen_types.EngineMessage)) {
 
-    let assert Ok(_) = mist.new(request_handler)
+    let assert Ok(_) = mist.new(fn(req) {request_handler(req, engine_sub)})
     |> mist.bind("localhost")
     |> mist.start
+}
 
-    process.sleep_forever()
+fn path_handlers_list(
+    ) -> Dict(
+        String,
+        fn(
+            request.Request(mist.Connection),
+            process.Subject(gen_types.EngineMessage)
+        ) -> response.Response(mist.ResponseData)
+        ) {
+
+    [
+    #("POST-/echo", api_handlers.echo_resp),
+    #("POST-/api/v1/register", api_handlers.register_user),
+    ]
+    |>dict.from_list
 }

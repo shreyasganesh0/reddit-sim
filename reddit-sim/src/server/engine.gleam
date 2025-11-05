@@ -19,6 +19,7 @@ import generated/generated_types as gen_types
 import generated/generated_selectors as gen_select
 import generated/generated_decoders as gen_decoders
 import utls
+import server/web_server
 
 @external(erlang, "global", "register_name")
 fn global_register(name: atom.Atom, pid: process.Pid) -> atom.Atom 
@@ -28,7 +29,17 @@ pub fn create(num_users: Int) -> Nil {
 
     let main_sub = process.new_subject()
     let _ = supervisor.new(supervisor.OneForOne)
-    |> supervisor.add(supervision.worker(fn() {start(num_users, main_sub)})|> supervision.restart(supervision.Transient))
+    |> supervisor.add(
+        supervision.worker(
+            fn() {
+                let res = start(num_users, main_sub)
+                let assert Ok(sub) = res 
+                let _ = web_server.start(sub.data)
+                res
+            }
+        )
+        |> supervision.restart(supervision.Transient)
+    )
     |> supervisor.start
 
     process.receive_forever(main_sub)
@@ -40,6 +51,7 @@ fn start(num_users, main_sub) -> actor.StartResult(process.Subject(gen_types.Eng
     actor.new_with_initialiser(1000, fn(sub) {init(sub, main_sub, num_users)})
     |> actor.on_message(handle_engine)
     |> actor.start
+
 }
 
 fn init(
@@ -91,6 +103,7 @@ fn init(
     let selector_tag_list = gen_select.get_engine_selector_list()
 
     let selector = utls.create_selector(selector, selector_tag_list)
+    |> process.select_map(sub, fn(msg) {msg})
 
     let ret = actor.initialised(init_state)
     |> actor.returning(sub)
