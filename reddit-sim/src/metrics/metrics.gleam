@@ -121,7 +121,7 @@ fn init(
 
         process.sleep(500)
         let data = global_whereisname(engine_atom)
-        let pid = case decode.run(data, gen_decode.pid_decoder(data)) {
+        let pid = case decode.run(data, gen_decode.pid_decoder()) {
 
             Ok(engine_pid) -> {
 

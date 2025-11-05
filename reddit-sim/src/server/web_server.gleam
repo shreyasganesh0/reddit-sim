@@ -4,8 +4,9 @@ import gleam/http/response
 
 import gleam/erlang/process
 
-import gleam/result
 import gleam/bytes_tree
+
+import server/api_handlers
 
 fn request_handler(req: request.Request(mist.Connection)) -> response.Response(mist.ResponseData) {
     
@@ -17,7 +18,21 @@ fn request_handler(req: request.Request(mist.Connection)) -> response.Response(m
 
         ["echo"] -> {
 
-            echo_resp(req)
+            api_handlers.echo_resp(req)
+        }
+
+        ["api", "v1", ..rest] -> {
+
+            case rest {
+
+                ["register"] -> {
+
+                    api_handlers.register_user(req)
+
+                }
+
+                _ -> resp_404
+            }
         }
         
         _ -> {
@@ -29,23 +44,6 @@ fn request_handler(req: request.Request(mist.Connection)) -> response.Response(m
     }
 }
 
-fn echo_resp(req: request.Request(mist.Connection)) -> response.Response(mist.ResponseData) {
-
-    let content_type = request.get_header(req, "content-type")
-    |> result.unwrap("plain/text")
-
-    mist.read_body(req, 1024) 
-    |> result.map(
-        fn(a) {
-
-            response.new(200)
-            |> response.set_body(mist.Bytes(bytes_tree.new()|>bytes_tree.append(a.body)))
-            |> response.set_header("content-type", content_type)
-        }
-    )
-    |> result.lazy_unwrap(fn() {response.new(404)
-        |>response.set_body(mist.Bytes(bytes_tree.new()))})
-}
 
 
 pub fn main() {

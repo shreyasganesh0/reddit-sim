@@ -234,7 +234,7 @@ fn init(
             False -> Nil
         }
         let data = global_whereisname(engine_atom)
-        let pid = case decode.run(data, gen_decode.pid_decoder(data)) {
+        let pid = case decode.run(data, gen_decode.pid_decoder()) {
 
             Ok(engine_pid) -> {
 
@@ -250,7 +250,7 @@ fn init(
         }
 
         let data = global_whereisname(metrics_atom)
-        let metrics_pid = case decode.run(data, gen_decode.pid_decoder(data)) {
+        let metrics_pid = case decode.run(data, gen_decode.pid_decoder()) {
 
             Ok(metrics_pid) -> {
 
