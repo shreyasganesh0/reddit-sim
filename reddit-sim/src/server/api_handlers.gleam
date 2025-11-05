@@ -16,7 +16,6 @@ import generated/generated_types as gen_types
 
 pub fn echo_resp(
     req: request.Request(mist.Connection),
-    _engine_sub: process.Subject(gen_types.EngineMessage),
     ) -> response.Response(mist.ResponseData) {
 
     io.println("[SERVER]: recvd echo request")
@@ -73,8 +72,6 @@ pub fn register_user(
 }
 
 pub fn error_page_not_found(
-    _req: request.Request(mist.Connection),
-    _engine_sub: process.Subject(gen_types.EngineMessage),
     ) -> response.Response(mist.ResponseData) {
 
     io.println("[SERVER]: recvd invalid request")
