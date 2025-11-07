@@ -91,7 +91,7 @@ pub fn register_user(
         fn(_) {
 
             Error(
-                response.new(404)
+                response.new(500)
                 |>response.set_body(
                     bytes_tree.new()
                     |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
@@ -121,6 +121,123 @@ pub fn register_user(
     |> result.unwrap(response.new(404)|>response.set_body(mist.Bytes(bytes_tree.new())))
 }
 
+pub fn search_user(
+    req: request.Request(mist.Connection),
+    engine_pid: process.Pid,
+    self_selector: process.Selector(gen_types.UserMessage)
+    ) -> response.Response(mist.ResponseData) {
+
+    io.println("[SERVER]: recvd search user request")
+
+    let content_type = request.get_header(req, "content-type")
+    |> result.unwrap("plain/text")
+
+    {
+
+    use query <- result.try(
+        result.map_error(
+            request.get_query(req),
+            fn(_) {
+
+                Error(
+                    response.new(404)
+                    |>response.set_body(
+                        bytes_tree.new()
+                        |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+                    )
+                )
+
+            }
+        )
+    )
+
+    use search_user <- result.try(
+        result.map_error(
+            fn() {
+
+                case query {
+
+                    [#("q", search_user)] -> {
+
+                        Ok(search_user)
+                    }
+                    _  -> {
+
+                        Error(Nil)
+                    }
+                }
+            }(),
+            fn(_) {
+
+                Error(
+                    response.new(400)
+                    |>response.set_body(
+                        bytes_tree.new()
+                        |>bytes_tree.append(bit_array.from_string("Invalid query args"))
+                    )
+                )
+
+            }
+        )
+    )
+
+    use user_id <- result.try(
+        result.map_error(
+            request.get_header(req, "authorization"),
+            fn(_) {
+
+                Error(
+                    response.new(401)
+                    |>response.set_body(
+                        bytes_tree.new()
+                        |>bytes_tree.append(bit_array.from_string("Unauthorized"))
+                    )
+                )
+
+            }
+        )
+    )
+
+    echo user_id
+
+    #("search_user", self(), user_id, search_user, "") 
+    |> utls.send_to_pid(engine_pid, _)
+
+    use resp_ans <- result.try(
+        result.map_error(
+        process.selector_receive(self_selector, 1000),
+        fn(_) {
+
+            Error(
+                response.new(500)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Query timedout"))
+                )
+            )
+        }
+        ))
+
+    let assert gen_types.SearchUserSuccess(user_id, _) = resp_ans 
+    Ok(
+        response.new(200)
+        |> response.set_body(
+            mist.Bytes(
+                bytes_tree.new()
+                |>bytes_tree.append(
+                    json.object(
+                    [#("user_id", json.string(user_id))]
+                    )
+                    |>json.to_string
+                    |> bit_array.from_string
+                )
+            )
+        )
+        |> response.set_header("content-type", content_type)
+    )
+    }
+    |> result.unwrap(response.new(404)|>response.set_body(mist.Bytes(bytes_tree.new())))
+}
 pub fn error_page_not_found(
     ) -> response.Response(mist.ResponseData) {
 

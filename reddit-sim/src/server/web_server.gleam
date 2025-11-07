@@ -44,7 +44,18 @@ fn request_handler(
 
                     api_handlers.register_user(req, engine_sub, self_selector)
                 }
+                _ -> api_handlers.error_page_not_found()
+            }
+        }
 
+        http.Get, ["api", "v1", ..rest] -> {
+
+            case rest {
+
+                ["search_user"] -> {
+
+                    api_handlers.search_user(req, engine_sub, self_selector)
+                }
                 _ -> api_handlers.error_page_not_found()
             }
         }

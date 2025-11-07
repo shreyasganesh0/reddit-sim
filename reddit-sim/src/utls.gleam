@@ -55,22 +55,12 @@ pub type ValidateError {
 }
 
 pub fn validate_request(
-    sender_pid: process.Pid, 
+    _sender_pid: process.Pid, 
     sender_uuid: String,
-    pidmap: Dict(String, process.Pid), 
+    _pidmap: Dict(String, process.Pid), 
     usermap: Dict(String, gen_types.User)
     ) -> Result(gen_types.User, String) {
 
-        use pid <- result.try(
-                    result.map_error(
-                        dict.get(pidmap, sender_uuid),
-                        fn(_) {
-
-                            let fail_reason = "User was not registered" 
-                            fail_reason
-                        }
-                    )
-                   )
         use user <- result.try(
                         result.map_error(
                             dict.get(usermap, sender_uuid),
@@ -81,19 +71,7 @@ pub fn validate_request(
                             }
                         )
                       )
-        case pid == sender_pid {
-
-            True -> {
-
                 Ok(user)
-            }
-
-            False -> {
-
-                let fail_reason = "Process did not match uuid"
-                Error(fail_reason)
-            }
-        }
 }
 
 pub fn check_comment_parent(
