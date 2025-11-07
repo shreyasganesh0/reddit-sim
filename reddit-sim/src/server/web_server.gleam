@@ -14,13 +14,17 @@ import server/api_handlers
 
 import generated/generated_types as gen_types
 import generated/generated_decoders as gen_decode
+import generated/generated_selectors as gen_select
+
+import utls
 
 @external(erlang, "global", "whereis_name")
 fn global_whereisname(name: atom.Atom) -> dynamic.Dynamic 
 
 fn request_handler(
     req: request.Request(mist.Connection), 
-    engine_sub: process.Pid
+    engine_sub: process.Pid,
+    self_selector: process.Selector(gen_types.UserMessage)
     ) -> response.Response(mist.ResponseData) {
     
 
@@ -38,7 +42,7 @@ fn request_handler(
 
                 ["register"] -> {
 
-                    api_handlers.register_user(req, engine_sub)
+                    api_handlers.register_user(req, engine_sub, self_selector)
                 }
 
                 _ -> api_handlers.error_page_not_found()
@@ -93,8 +97,15 @@ pub fn start() {
         }
     }
 
-    let assert Ok(_) = mist.new(fn(req) {request_handler(req, engine_pid)})
+    let assert Ok(_) = mist.new(fn(req) {request_handler(req, engine_pid, create_selector())})
     |> mist.bind("localhost")
     |> mist.start
 }
 
+
+fn create_selector() -> process.Selector(gen_types.UserMessage) {
+
+    process.new_selector()
+    |> utls.create_selector(gen_select.get_user_selector_list())
+    //|> process.select_map(sub, fn(msg) {msg})
+}

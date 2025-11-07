@@ -33,7 +33,6 @@ pub fn create(num_users: Int) -> Nil {
         supervision.worker(
             fn() {
                 let res = start(num_users, main_sub)
-                let assert Ok(sub) = res 
                 let _ = web_server.start()
                 res
             }
