@@ -34,7 +34,7 @@ pub fn create(num_users: Int) -> Nil {
             fn() {
                 let res = start(num_users, main_sub)
                 let assert Ok(sub) = res 
-                let _ = web_server.start(sub.data)
+                let _ = web_server.start()
                 res
             }
         )

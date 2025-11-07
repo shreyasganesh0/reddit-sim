@@ -1,17 +1,26 @@
 import mist
 import gleam/http
+import gleam/io
+import gleam/dynamic
+import gleam/dynamic/decode
 import gleam/http/request
 import gleam/http/response
 
 import gleam/erlang/process
+import gleam/erlang/atom
+import gleam/erlang/node
 
 import server/api_handlers
 
 import generated/generated_types as gen_types
+import generated/generated_decoders as gen_decode
+
+@external(erlang, "global", "whereis_name")
+fn global_whereisname(name: atom.Atom) -> dynamic.Dynamic 
 
 fn request_handler(
     req: request.Request(mist.Connection), 
-    engine_sub: process.Subject(gen_types.EngineMessage)
+    engine_sub: process.Pid
     ) -> response.Response(mist.ResponseData) {
     
 
@@ -42,9 +51,50 @@ fn request_handler(
 
 
 
-pub fn start(engine_sub: process.Subject(gen_types.EngineMessage)) {
+pub fn start() {
 
-    let assert Ok(_) = mist.new(fn(req) {request_handler(req, engine_sub)})
+    //let restserver_node = atom.create("restserver@localhost")
+    let engine_node = atom.create("engine@localhost")
+    let engine_atom = atom.create("engine")
+
+    case node.connect(engine_node) {
+        
+        Ok(_node) -> {
+
+            io.println("Connected to engine")
+        }
+
+        Error(err) -> {
+
+            case err {
+
+                node.FailedToConnect -> io.println("Node failed to connect")
+
+                node.LocalNodeIsNotAlive -> io.println("Not in distributed mode")
+            }
+        }
+
+    }
+
+    process.sleep(500)
+    let data = global_whereisname(engine_atom)
+    let engine_pid = case decode.run(data, gen_decode.pid_decoder()) {
+
+        Ok(engine_pid) -> {
+
+            io.println("Found engine's pid")
+            engine_pid
+        }
+
+        Error(_) -> {
+
+            io.println("Couldnt find engine's pid")
+            panic
+        }
+    }
+
+    let assert Ok(_) = mist.new(fn(req) {request_handler(req, engine_pid)})
     |> mist.bind("localhost")
     |> mist.start
 }
+

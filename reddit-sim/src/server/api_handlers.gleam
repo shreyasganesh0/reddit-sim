@@ -14,6 +14,11 @@ import gleam/io
 import generated/generated_decoders as gen_decode
 import generated/generated_types as gen_types
 
+import utls
+
+@external(erlang, "erlang", "self")
+fn self() -> process.Pid
+
 pub fn echo_resp(
     req: request.Request(mist.Connection),
     ) -> response.Response(mist.ResponseData) {
@@ -38,7 +43,7 @@ pub fn echo_resp(
 
 pub fn register_user(
     req: request.Request(mist.Connection),
-    engine_sub: process.Subject(gen_types.EngineMessage),
+    engine_pid: process.Pid,
     ) -> response.Response(mist.ResponseData) {
 
     io.println("[SERVER]: recvd register request")
@@ -53,7 +58,21 @@ pub fn register_user(
             let user_details = a.body
             |> json.parse_bits(gen_decode.rest_register_user_decoder())
             
-            echo user_details
+            case user_details {
+
+                Ok(gen_types.RestRegisterUser(username, password)) -> {
+                    let send_msg = #("register_user", self(), username, password, "")
+                    utls.send_to_pid(engine_pid, send_msg)
+                    //process.receive(self_sub, 1000)
+                    todo
+                }
+
+                _ -> {
+
+                    todo
+                }
+
+            }
 
             response.new(200)
             |> response.set_body(
