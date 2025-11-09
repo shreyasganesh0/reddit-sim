@@ -245,3 +245,104 @@ pub fn error_page_not_found(
     response.new(404)
     |> response.set_body(mist.Bytes(bytes_tree.new()))
 }
+
+pub fn create_subreddit(
+    req: request.Request(mist.Connection),
+    engine_pid: process.Pid,
+    self_selector: process.Selector(gen_types.UserMessage)
+    ) -> response.Response(mist.ResponseData) {
+
+    io.println("[SERVER]: recvd create subreddit request")
+
+    let content_type = request.get_header(req, "content-type")
+    |> result.unwrap("plain/text")
+
+    {
+    use req_bytes <- result.try(
+        result.map_error(
+        mist.read_body(req, 1024 * 1024), 
+        fn (_) {
+
+            Error(
+                response.new(400)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+                )
+            )
+        }))
+    echo req_bytes
+    use req_parsed <- result.try(
+                result.map_error(
+                req_bytes.body |> json.parse_bits(gen_decode.rest_create_subreddit_decoder()),
+                fn(_) {
+
+                    Error(
+                        response.new(400)
+                        |>response.set_body(
+                            bytes_tree.new()
+                            |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+                        )
+                    )
+                }))
+    echo req_parsed
+    use user_id <- result.try(
+        result.map_error(
+            request.get_header(req, "authorization"),
+            fn(_) {
+
+                Error(
+                    response.new(401)
+                    |>response.set_body(
+                        bytes_tree.new()
+                        |>bytes_tree.append(bit_array.from_string("Unauthorized"))
+                    )
+                )
+
+            }
+        )
+    )
+
+    echo user_id
+
+    let assert gen_types.RestCreateSubreddit(subreddit_name) = req_parsed
+    echo subreddit_name
+
+    #("create_subreddit", self(), user_id, subreddit_name, "") 
+    |> utls.send_to_pid(engine_pid, _)
+
+    use resp_ans <- result.try(
+        result.map_error(
+        process.selector_receive(self_selector, 1000),
+        fn(_) {
+
+            Error(
+                response.new(500)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+                )
+            )
+        }
+        ))
+
+    let assert gen_types.CreateSubredditSuccess(subreddit_id, _) = resp_ans 
+    Ok(
+        response.new(200)
+        |> response.set_body(
+            mist.Bytes(
+                bytes_tree.new()
+                |>bytes_tree.append(
+                    json.object(
+                    [#("subreddit_id", json.string(subreddit_id))]
+                    )
+                    |>json.to_string
+                    |> bit_array.from_string
+                )
+            )
+        )
+        |> response.set_header("content-type", content_type)
+    )
+    }
+    |> result.unwrap(response.new(404)|>response.set_body(mist.Bytes(bytes_tree.new())))
+}

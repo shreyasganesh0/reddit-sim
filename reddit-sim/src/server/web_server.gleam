@@ -44,6 +44,11 @@ fn request_handler(
 
                     api_handlers.register_user(req, engine_sub, self_selector)
                 }
+
+                ["subreddit"] -> {
+
+                    api_handlers.create_subreddit(req, engine_sub, self_selector)
+                }
                 _ -> api_handlers.error_page_not_found()
             }
         }
