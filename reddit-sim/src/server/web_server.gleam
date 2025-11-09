@@ -53,6 +53,19 @@ fn request_handler(
             }
         }
 
+        http.Post, ["r", _subreddit_name, "api", ..rest] -> {
+
+            case rest {
+
+                ["subscribe"] -> {
+
+                    api_handlers.join_subreddit(req, engine_sub, self_selector)
+                }
+
+                _ -> api_handlers.error_page_not_found()
+            }
+        }
+
         http.Get, ["api", "v1", ..rest] -> {
 
             case rest {
