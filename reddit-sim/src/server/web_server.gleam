@@ -66,6 +66,19 @@ fn request_handler(
             }
         }
 
+        http.Delete, ["r", subreddit_id, "api", ..rest] -> {
+
+            case rest {
+
+                ["subscribe"] -> {
+
+                    api_handlers.leave_subreddit(req, engine_sub, self_selector, subreddit_id)
+                }
+
+                _ -> api_handlers.error_page_not_found()
+            }
+        }
+
         http.Get, ["api", "v1", ..rest] -> {
 
             case rest {
