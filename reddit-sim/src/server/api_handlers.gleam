@@ -19,6 +19,14 @@ import utls
 @external(erlang, "erlang", "self")
 fn self() -> process.Pid
 
+pub fn error_page_not_found(
+    ) -> response.Response(mist.ResponseData) {
+
+    io.println("[SERVER]: recvd invalid request")
+    response.new(404)
+    |> response.set_body(mist.Bytes(bytes_tree.new()))
+}
+
 pub fn echo_resp(
     req: request.Request(mist.Connection),
     ) -> response.Response(mist.ResponseData) {
@@ -236,13 +244,6 @@ pub fn search_user(
     )
     }
     |> result.unwrap(response.new(404)|>response.set_body(mist.Bytes(bytes_tree.new())))
-}
-pub fn error_page_not_found(
-    ) -> response.Response(mist.ResponseData) {
-
-    io.println("[SERVER]: recvd invalid request")
-    response.new(404)
-    |> response.set_body(mist.Bytes(bytes_tree.new()))
 }
 
 pub fn create_subreddit(
