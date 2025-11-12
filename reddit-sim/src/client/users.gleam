@@ -314,6 +314,7 @@ fn get_fsm_actions(state: gen_types.UserState) -> List(gen_types.UserMessage) {
                             gen_types.InjectGetFeed,
                             gen_types.InjectGetSubredditfeed,
                             gen_types.InjectSearchUser,
+                            gen_types.InjectSearchSubreddit,
                             gen_types.InjectGetDirectmessages,
                             gen_types.InjectCreateSubreddit,
                             gen_types.InjectJoinSubreddit
@@ -370,6 +371,7 @@ fn filter_by_user_type(role: String) -> List(gen_types.UserMessage) {
             gen_types.InjectReplyDirectmessage,
             gen_types.InjectGetDirectmessages,
             gen_types.InjectSearchUser,
+            gen_types.InjectSearchSubreddit,
             ]
         }
 
@@ -389,6 +391,7 @@ fn filter_by_user_type(role: String) -> List(gen_types.UserMessage) {
             gen_types.InjectReplyDirectmessage,
             gen_types.InjectGetDirectmessages,
             gen_types.InjectSearchUser,
+            gen_types.InjectSearchSubreddit,
             ]
         }
 
@@ -400,6 +403,7 @@ fn filter_by_user_type(role: String) -> List(gen_types.UserMessage) {
             gen_types.InjectGetFeed,
             gen_types.InjectGetSubredditfeed,
             gen_types.InjectSearchUser,
+            gen_types.InjectSearchSubreddit,
             ]
         }
     }
@@ -514,7 +518,15 @@ fn filter_by_action_type() -> gen_types.UserMessage {
 
                                     case in_r <. 0.99 {
 
-                                        True -> gen_types.InjectSearchUser
+                                        True -> { 
+
+                                            case in_r >. 0.95 {
+
+                                                True -> gen_types.InjectSearchUser
+
+                                                False -> gen_types.InjectSearchSubreddit
+                                            }
+                                        }
 
                                         False -> {
 
@@ -876,6 +888,60 @@ fn handle_user(
             utls.send_to_pid(
                 state.metrics_pid, 
                 #("record_action", "join_subreddit", "failed")
+            )
+            let new_pending = dict.drop(state.pending_reqs, [req_id])
+            let state = gen_types.UserState(
+                                ..state,
+                                pending_reqs: new_pending,
+                            )
+            actor.continue(state)
+        }
+
+//---------------------------------------------- SearchSubreddit ---------------------------------------------
+
+        gen_types.InjectSearchSubreddit -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting search subreddit")
+            let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
+
+            let state = gen_types.UserState(
+                ..state,
+                pending_reqs: new_pending,
+            )
+            utls.send_to_engine(
+                #(
+                    "search_subreddit",
+                    self(), 
+                    state.uuid,
+                    "subreddit_"<>int.to_string(int.random(1000)),
+                    req_id
+                )
+            )
+            actor.continue(state)
+        }
+        
+        gen_types.SearchSubredditSuccess(subreddit_id, req_id) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully found subreddit" <> subreddit_id)
+
+            let new_pending = user_metrics.send_timing_metrics(
+                req_id, "search_subreddit", state.pending_reqs, state.metrics_pid)
+
+            let new_state = gen_types.UserState(
+                                ..state,
+                                pending_reqs: new_pending,
+                                subreddits: [subreddit_id, ..state.subreddits],
+                            )
+            actor.continue(new_state)
+        }
+
+        gen_types.SearchSubredditFailed(subreddit_name, fail_reason, req_id) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to find subreddit " <> subreddit_name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+
+            utls.send_to_pid(
+                state.metrics_pid, 
+                #("record_action", "search_subreddit", "failed")
             )
             let new_pending = dict.drop(state.pending_reqs, [req_id])
             let state = gen_types.UserState(

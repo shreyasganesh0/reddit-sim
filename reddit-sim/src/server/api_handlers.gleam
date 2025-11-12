@@ -231,6 +231,132 @@ pub fn login_user(
     |> result.unwrap(response.new(404)|>response.set_body(mist.Bytes(bytes_tree.new())))
 }
 
+
+pub fn search_subreddit(
+    req: request.Request(mist.Connection),
+    engine_pid: process.Pid,
+    self_selector: process.Selector(gen_types.UserMessage)
+    ) -> response.Response(mist.ResponseData) {
+
+    io.println("[SERVER]: recvd search subreddit request")
+
+    let content_type = request.get_header(req, "content-type")
+    |> result.unwrap("plain/text")
+
+    {
+
+    use query <- result.try(
+        result.map_error(
+            request.get_query(req),
+            fn(_) {
+
+                response.new(404)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+                )
+
+            }
+        )
+    )
+
+    use search_subreddit <- result.try(
+        result.map_error(
+            fn() {
+
+                case query {
+
+                    [#("q", search_subreddit)] -> {
+
+                        Ok(search_subreddit)
+                    }
+                    _  -> {
+
+                        Error(Nil)
+                    }
+                }
+            }(),
+            fn(_) {
+
+                response.new(400)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Invalid query args"))
+                )
+            }
+        )
+    )
+
+    use user_id <- result.try(
+        result.map_error(
+            request.get_header(req, "authorization"),
+            fn(_) {
+
+                    response.new(401)
+                    |>response.set_body(
+                        bytes_tree.new()
+                        |>bytes_tree.append(bit_array.from_string("Unauthorized"))
+                    )
+
+            }
+        )
+    )
+
+
+    #("search_subreddit", self(), user_id, search_subreddit, "") 
+    |> utls.send_to_pid(engine_pid, _)
+
+    use resp_ans <- result.try(
+        result.map_error(
+        process.selector_receive(self_selector, 1000),
+        fn(_) {
+
+                response.new(500)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Query timedout"))
+                )
+        }
+        ))
+
+    use resp_subreddit_id <- result.try(
+        fn() {
+        case resp_ans {
+
+            gen_types.SearchSubredditSuccess(subreddit_id, _) -> {Ok(subreddit_id)}
+
+            _ -> {
+                Error(
+                response.new(400)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+                )
+                )
+            }
+        }
+        }()
+    )
+    Ok(
+        response.new(200)
+        |> response.set_body(
+            mist.Bytes(
+                bytes_tree.new()
+                |>bytes_tree.append(
+                    json.object(
+                    [#("subreddit_id", json.string(resp_subreddit_id))]
+                    )
+                    |>json.to_string
+                    |> bit_array.from_string
+                )
+            )
+        )
+        |> response.set_header("content-type", content_type)
+    )
+    }
+    |> result.unwrap(response.new(404)|>response.set_body(mist.Bytes(bytes_tree.new())))
+}
+
 pub fn search_user(
     req: request.Request(mist.Connection),
     engine_pid: process.Pid,

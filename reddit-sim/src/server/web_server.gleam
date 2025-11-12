@@ -27,6 +27,7 @@ fn request_handler(
     self_selector: process.Selector(gen_types.UserMessage)
     ) -> response.Response(mist.ResponseData) {
     
+    echo req
 
     case req.method, request.path_segments(req) {
 
@@ -92,6 +93,11 @@ fn request_handler(
                 ["search_user"] -> {
 
                     api_handlers.search_user(req, engine_sub, self_selector)
+                }
+
+                ["search_subreddit"] -> {
+
+                    api_handlers.search_subreddit(req, engine_sub, self_selector)
                 }
                 _ -> api_handlers.error_page_not_found()
             }

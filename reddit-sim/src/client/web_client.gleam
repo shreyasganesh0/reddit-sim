@@ -3,6 +3,7 @@ import gleam/io
 import gleam/string
 import gleam/result
 import gleam/bit_array
+import gleam/dict
 
 import gleam/http/request
 import gleam/http/response
@@ -19,7 +20,9 @@ type ReplError {
 
     RequestError(httpc.HttpError)
 
-    UnRegisteredError
+    UnregisteredError
+
+    SubredditUnknownError
 }
 
 
@@ -34,12 +37,12 @@ fn start_repl(state: response_handlers.ReplState) {
 
             "logout"-> {
 
-                Ok(#(response.new(200)|>response.map(bit_array.from_string), response_handlers.logout))
+                Ok(#(response.new(200)|>response.map(bit_array.from_string), response_handlers.logout, state))
             }
 
             _ -> {
 
-                use #(req, resp_handler) <- result.try(parse_line(line, state))
+                use #(req, resp_handler, state) <- result.try(parse_line(line, state))
                 use resp <- result.try(
                     result.map_error(
                         httpc.configure()
@@ -48,14 +51,14 @@ fn start_repl(state: response_handlers.ReplState) {
                         fn(e) {RequestError(e)}
                     )
                 )
-                Ok(#(resp, resp_handler))
+                Ok(#(resp, resp_handler, state))
             }
         }
     }
 
     let new_state = case res {
 
-        Ok(#(resp, resp_handler)) -> {
+        Ok(#(resp, resp_handler, state)) -> {
 
             resp_handler(resp, state)
         }
@@ -79,9 +82,14 @@ fn start_repl(state: response_handlers.ReplState) {
                     io.println("[CLIENT]: couldnt send request")
                 }
 
-                UnRegisteredError -> {
+                UnregisteredError -> {
 
                     io.println("[CLIENT]: must be registered/loggedin before performing this command")
+                }
+
+                SubredditUnknownError -> {
+
+                    io.println("[CLIENT]: subreddit not found, try searching for it first")
                 }
             }
 
@@ -95,7 +103,8 @@ fn start_repl(state: response_handlers.ReplState) {
 fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
     #(
         request.Request(BitArray),
-        fn(response.Response(BitArray), response_handlers.ReplState) -> response_handlers.ReplState
+        fn(response.Response(BitArray), response_handlers.ReplState) -> response_handlers.ReplState,
+        response_handlers.ReplState
     ),  
     ReplError
     ) {
@@ -115,7 +124,8 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                             Ok(
                                 #(
                                 request_builders.register_user(username, password),
-                                response_handlers.register_user
+                                response_handlers.register_user,
+                                state,
                                 )
                             )
                         }
@@ -133,7 +143,8 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                             Ok(
                                 #(
                                 request_builders.login_user(username, password),
-                                response_handlers.login_user
+                                response_handlers.login_user,
+                                state,
                                 )
                             )
                         }
@@ -152,17 +163,94 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                                 fn() {
                                     case state.user_id == "" {
 
-                                        True -> Error(UnRegisteredError)
+                                        True -> Error(UnregisteredError)
 
                                         False -> Ok(state.user_id)
                                     }
                                 }()
                             )
 
+                            let new_state = response_handlers.ReplState(
+                                ..state,
+                                to_update_subreddit_name: subreddit_name,
+                            )
+
                             Ok(
                                 #(
                                 request_builders.create_subreddit(subreddit_name, user_id),
-                                response_handlers.create_subreddit
+                                response_handlers.create_subreddit,
+                                new_state
+                                )
+                            )
+                        }
+
+                        _ -> Error(CommandError)
+                    }
+                }
+
+                "join-subreddit" -> {
+
+                    case rest {
+
+                        [subreddit_name] -> {
+
+                            use user_id <- result.try(
+                                fn() {
+                                    case state.user_id == "" {
+
+                                        True -> Error(UnregisteredError)
+
+                                        False -> Ok(state.user_id)
+                                    }
+                                }()
+                            )
+                            use subreddit_id <- result.try(
+                                result.map_error(
+                                    dict.get(state.subreddit_rev_index, subreddit_name),
+                                    fn(_) {SubredditUnknownError}
+                                )
+                            )
+                            echo subreddit_id
+
+                            Ok(
+                                #(
+                                request_builders.join_subreddit(subreddit_name, subreddit_id, user_id),
+                                response_handlers.join_subreddit,
+                                state
+                                )
+                            )
+                        }
+
+                        _ -> Error(CommandError)
+                    }
+                }
+
+                "search-subreddit" -> {
+
+                    case rest {
+
+                        [subreddit_name] -> {
+
+                            use user_id <- result.try(
+                                fn() {
+                                    case state.user_id == "" {
+
+                                        True -> Error(UnregisteredError)
+
+                                        False -> Ok(state.user_id)
+                                    }
+                                }()
+                            )
+
+                            let new_state = response_handlers.ReplState(
+                                ..state,
+                                to_update_subreddit_name: subreddit_name,
+                            )
+                            Ok(
+                                #(
+                                request_builders.search_subreddit(subreddit_name, user_id),
+                                response_handlers.search_subreddit,
+                                new_state
                                 )
                             )
                         }
@@ -185,6 +273,8 @@ pub fn main() {
     let init_state = response_handlers.ReplState(
                         user_id: "",
                         subreddits: [],
+                        to_update_subreddit_name: "",
+                        subreddit_rev_index: dict.new()
                     )
     start_repl(init_state)
 }

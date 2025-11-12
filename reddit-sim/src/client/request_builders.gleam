@@ -61,3 +61,33 @@ pub fn create_subreddit(subreddit_name: String, user_id: String) {
     |> request.set_body(send_body)
     |> request.set_method(http.Post)
 }
+
+pub fn join_subreddit(subreddit_name: String, subreddit_id: String, user_id: String) {
+
+    let send_body = dict.from_list([#("subreddit_id", subreddit_id)])
+    |> json.dict(function.identity, json.string)
+    |> json.to_string
+    |> bit_array.from_string
+
+    let content_length = bit_array.byte_size(send_body)
+    let base_req = request.to("http://localhost:4000/r/"<>subreddit_name<>"/api/subscribe")
+    |> result.unwrap(request.new())
+    |> request.map(bit_array.from_string)
+    
+    base_req
+    |> request.set_header("Content-Length", int.to_string(content_length))
+    |> request.set_header("authorization", user_id)
+    |> request.set_body(send_body)
+    |> request.set_method(http.Post)
+}
+
+pub fn search_subreddit(subreddit_name: String, user_id: String) {
+
+    let base_req = request.to("http://localhost:4000/api/v1/search_subreddit?q="<>subreddit_name)
+    |> result.unwrap(request.new())
+    |> request.map(bit_array.from_string)
+    
+    base_req
+    |> request.set_header("authorization", user_id)
+    |> request.set_method(http.Get)
+}

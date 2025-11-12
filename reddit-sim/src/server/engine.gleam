@@ -507,6 +507,46 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
+        gen_types.SearchSubreddit(send_pid, uuid, search_subreddit, req_id) -> {
+
+            let res = {
+                use _user <- result.try(
+                                    utls.validate_request(
+                                    send_pid,
+                                    uuid,
+                                    state.user_pid_map,
+                                    state.users_data
+                                    )
+                                )
+                use search_id <- result.try(
+                                    result.map_error(
+                                        dict.get(state.subreddit_rev_index, search_subreddit),
+                                        fn(_) {"no user found for name"}
+                                        )
+                                    )
+                Ok(search_id)
+            }
+
+            let new_state = case res {
+
+                Ok(search_id) -> {
+                    utls.send_to_pid(send_pid, #("search_subreddit_success", search_id, req_id))
+                    state
+
+                }
+
+                Error(reason) -> {
+
+                    utls.send_to_pid(send_pid, #("search_subreddit_failed", search_subreddit, reason, req_id))
+                    state
+                }
+
+            }
+            actor.continue(new_state)
+        }
+
+//------------------------------------------------------------------------------------------------------
+
         gen_types.CreateRepost(send_pid, uuid, post_id, req_id) -> {
 
             let res = {
