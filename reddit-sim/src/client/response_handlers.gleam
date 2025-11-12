@@ -33,3 +33,34 @@ pub fn register_user(resp: response.Response(BitArray), state: ReplState) -> Rep
     }
     
 }
+
+pub fn login_user(resp: response.Response(BitArray), state: ReplState) -> ReplState {
+
+    case json.parse_bits(resp.body, gen_decode.rest_login_user_success_decoder()) {
+
+        Ok(gen_types.RestLoginUserSuccess(user_id)) -> {
+
+            io.println("[CLIENT]: login with id "<>user_id)
+            ReplState(
+                ..state,
+                user_id: user_id,
+            )
+        }
+
+        _ -> {
+
+            state
+        }
+    }
+    
+}
+
+pub fn logout(_resp: response.Response(BitArray), state: ReplState) -> ReplState {
+
+    io.println("[CLIENT]: logged out")
+    ReplState(
+        ..state,
+        user_id: "",
+    )
+    
+}

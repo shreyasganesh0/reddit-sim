@@ -2,6 +2,7 @@ import in
 import gleam/io
 import gleam/string
 import gleam/result
+import gleam/bit_array
 
 import gleam/http/request
 import gleam/http/response
@@ -26,16 +27,28 @@ fn start_repl(state: response_handlers.ReplState) {
     let res = {
 
         use line <- result.try(result.map_error(in.read_line(), fn(e) {ReadError(e)}))
-        use #(req, resp_handler) <- result.try(parse_line(line))
-        use resp <- result.try(
-            result.map_error(
-                httpc.configure()
-                |> httpc.verify_tls(False)
-                |> httpc.dispatch_bits(req),
-                fn(e) {RequestError(e)}
-            )
-        )
-        Ok(#(resp, resp_handler))
+        let line = string.trim(line)
+        case line {
+
+            "logout"-> {
+
+                Ok(#(response.new(200)|>response.map(bit_array.from_string), response_handlers.logout))
+            }
+
+            _ -> {
+
+                use #(req, resp_handler) <- result.try(parse_line(line))
+                use resp <- result.try(
+                    result.map_error(
+                        httpc.configure()
+                        |> httpc.verify_tls(False)
+                        |> httpc.dispatch_bits(req),
+                        fn(e) {RequestError(e)}
+                    )
+                )
+                Ok(#(resp, resp_handler))
+            }
+        }
     }
 
     let new_state = case res {
@@ -96,6 +109,24 @@ fn parse_line(line: String) -> Result(
                                 #(
                                 request_builders.register_user(username, password),
                                 response_handlers.register_user
+                                )
+                            )
+                        }
+
+                        _ -> Error(CommandError)
+                    }
+                }
+
+                "login" -> {
+
+                    case rest {
+
+                        [username, password] -> {
+
+                            Ok(
+                                #(
+                                request_builders.login_user(username, password),
+                                response_handlers.login_user
                                 )
                             )
                         }

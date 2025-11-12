@@ -45,6 +45,12 @@ fn request_handler(
                     api_handlers.register_user(req, engine_sub, self_selector)
                 }
 
+
+                ["login"] -> {
+
+                    api_handlers.login_user(req, engine_sub, self_selector)
+                }
+
                 ["subreddit"] -> {
 
                     api_handlers.create_subreddit(req, engine_sub, self_selector)

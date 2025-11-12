@@ -66,12 +66,10 @@ pub fn register_user(
         mist.read_body(req, 1024), 
         fn (_) {
 
-            Error(
-                response.new(400)
-                |>response.set_body(
-                    bytes_tree.new()
-                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
-                )
+            response.new(400)
+            |>response.set_body(
+                bytes_tree.new()
+                |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
             )
         }))
     use req_parsed <- result.try(
@@ -79,12 +77,10 @@ pub fn register_user(
                 req_bytes.body |> json.parse_bits(gen_decode.rest_register_user_decoder()),
                 fn(_) {
 
-                    Error(
-                        response.new(400)
-                        |>response.set_body(
-                            bytes_tree.new()
-                            |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
-                        )
+                    response.new(400)
+                    |>response.set_body(
+                        bytes_tree.new()
+                        |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
                     )
                 }))
 
@@ -98,17 +94,32 @@ pub fn register_user(
         process.selector_receive(self_selector, 1000),
         fn(_) {
 
-            Error(
-                response.new(500)
-                |>response.set_body(
-                    bytes_tree.new()
-                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
-                )
+            response.new(500)
+            |>response.set_body(
+                bytes_tree.new()
+                |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
             )
         }
         ))
 
-    let assert gen_types.RegisterUserSuccess(user_id, _) = resp_ans 
+    use resp_user_id <- result.try(
+        fn() {
+        case resp_ans {
+
+            gen_types.RegisterUserSuccess(user_id, _) -> {Ok(user_id)}
+
+            _ -> {
+                Error(
+                response.new(400)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+                )
+                )
+            }
+        }
+        }()
+    )
     Ok(
         response.new(200)
         |> response.set_body(
@@ -116,7 +127,98 @@ pub fn register_user(
                 bytes_tree.new()
                 |>bytes_tree.append(
                     json.object(
-                    [#("user_id", json.string(user_id))]
+                    [#("user_id", json.string(resp_user_id))]
+                    )
+                    |>json.to_string
+                    |> bit_array.from_string
+                )
+            )
+        )
+        |> response.set_header("content-type", content_type)
+    )
+    }
+    |> result.unwrap(response.new(404)|>response.set_body(mist.Bytes(bytes_tree.new())))
+}
+
+pub fn login_user(
+    req: request.Request(mist.Connection),
+    engine_pid: process.Pid,
+    self_selector: process.Selector(gen_types.UserMessage)
+    ) -> response.Response(mist.ResponseData) {
+
+    io.println("[SERVER]: recvd login request")
+
+    let content_type = request.get_header(req, "content-type")
+    |> result.unwrap("plain/text")
+
+    {
+    use req_bytes <- result.try(
+        result.map_error(
+        mist.read_body(req, 1024), 
+        fn (_) {
+
+            response.new(400)
+            |>response.set_body(
+                bytes_tree.new()
+                |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+            )
+        }))
+    use req_parsed <- result.try(
+                result.map_error(
+                req_bytes.body |> json.parse_bits(gen_decode.rest_login_user_decoder()),
+                fn(_) {
+
+                    response.new(400)
+                    |>response.set_body(
+                        bytes_tree.new()
+                        |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+                    )
+                }))
+
+    let assert gen_types.RestLoginUser(username, password) = req_parsed
+
+    #("login_user", self(), username, password, "") 
+    |> utls.send_to_pid(engine_pid, _)
+
+    use resp_ans <- result.try(
+        result.map_error(
+        process.selector_receive(self_selector, 1000),
+        fn(_) {
+
+                response.new(500)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+                )
+        }
+        ))
+
+    use resp_user_id <- result.try(
+        fn() {
+        case resp_ans {
+
+            gen_types.LoginUserSuccess(user_id, _) -> {Ok(user_id)}
+
+            _ -> {
+                Error(
+                response.new(400)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+                )
+                )
+            }
+        }
+        }()
+    )
+    Ok(
+        response.new(200)
+        |> response.set_body(
+            mist.Bytes(
+                bytes_tree.new()
+                |>bytes_tree.append(
+                    json.object(
+                    [#("user_id", json.string(resp_user_id))]
                     )
                     |>json.to_string
                     |> bit_array.from_string
@@ -147,12 +249,10 @@ pub fn search_user(
             request.get_query(req),
             fn(_) {
 
-                Error(
-                    response.new(404)
-                    |>response.set_body(
-                        bytes_tree.new()
-                        |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
-                    )
+                response.new(404)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
                 )
 
             }
@@ -177,14 +277,11 @@ pub fn search_user(
             }(),
             fn(_) {
 
-                Error(
-                    response.new(400)
-                    |>response.set_body(
-                        bytes_tree.new()
-                        |>bytes_tree.append(bit_array.from_string("Invalid query args"))
-                    )
+                response.new(400)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Invalid query args"))
                 )
-
             }
         )
     )
@@ -194,13 +291,11 @@ pub fn search_user(
             request.get_header(req, "authorization"),
             fn(_) {
 
-                Error(
                     response.new(401)
                     |>response.set_body(
                         bytes_tree.new()
                         |>bytes_tree.append(bit_array.from_string("Unauthorized"))
                     )
-                )
 
             }
         )
@@ -215,17 +310,32 @@ pub fn search_user(
         process.selector_receive(self_selector, 1000),
         fn(_) {
 
-            Error(
                 response.new(500)
                 |>response.set_body(
                     bytes_tree.new()
                     |>bytes_tree.append(bit_array.from_string("Query timedout"))
                 )
-            )
         }
         ))
 
-    let assert gen_types.SearchUserSuccess(user_id, _) = resp_ans 
+    use resp_user_id <- result.try(
+        fn() {
+        case resp_ans {
+
+            gen_types.SearchUserSuccess(user_id, _) -> {Ok(user_id)}
+
+            _ -> {
+                Error(
+                response.new(400)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+                )
+                )
+            }
+        }
+        }()
+    )
     Ok(
         response.new(200)
         |> response.set_body(
@@ -233,7 +343,7 @@ pub fn search_user(
                 bytes_tree.new()
                 |>bytes_tree.append(
                     json.object(
-                    [#("user_id", json.string(user_id))]
+                    [#("user_id", json.string(resp_user_id))]
                     )
                     |>json.to_string
                     |> bit_array.from_string

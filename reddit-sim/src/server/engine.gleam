@@ -168,12 +168,14 @@ fn handle_engine(
             )
             actor.continue(new_state)
         }
+
 //------------------------------------------------------------------------------------------------------
+
         gen_types.RegisterUser(send_pid, username, password, req_id) -> {
 
             io.println("[ENGINE]: recvd register user msg username: " <> username <> " password: "<> password)
 
-            case dict.has_key(state.users_data, username) {
+            case dict.has_key(state.user_rev_index, username) {
 
                 True -> {
 
@@ -221,6 +223,56 @@ fn handle_engine(
                 }
             }
         }
+
+//------------------------------------------------------------------------------------------------------
+
+        gen_types.LoginUser(send_pid, username, password, req_id) -> {
+
+            io.println("[ENGINE]: recvd login user msg username: " <> username <> " password: "<> password)
+
+            let res = {
+                use user_id <- result.try(dict.get(state.user_rev_index, username))
+                use user_data <- result.try(dict.get(state.users_data, user_id))
+
+                let passbits =  bit_array.from_string(password)
+                let passhash = crypto.new_hasher(crypto.Sha512)
+                |> crypto.hash_chunk(passbits)
+                |> crypto.digest
+
+                case user_data.passhash == passhash {
+
+                    True -> Ok(user_id)
+
+                    False -> Error(Nil)
+                }
+            }
+
+            let new_state = case res {
+
+                Ok(user_id) -> {
+
+                    utls.send_to_pid(send_pid, #("login_user_success", user_id, req_id))
+                    gen_types.EngineState(
+                        ..state,
+                        user_pid_map: dict.insert(
+                                        state.user_pid_map,
+                                        user_id,
+                                        send_pid
+                                    )
+                    )
+                }
+
+                Error(_) -> {
+
+                    utls.send_to_pid(send_pid, #("login_user_failed", username, "username has been not been registered or password was incorrect", req_id))
+
+                    state
+                }
+            }
+
+            actor.continue(new_state)
+        }
+
 
 
 //------------------------------------------------------------------------------------------------------

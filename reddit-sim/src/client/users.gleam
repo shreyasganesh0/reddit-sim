@@ -586,7 +586,7 @@ fn handle_user(
             actor.stop()
         }
 
-//---------------------------------------------- RegisterUser -------------------------------------------
+//---------------------------------------------- DisconnectUser -------------------------------------------
         gen_types.InjectDisconnectReconnect -> {
 
 
@@ -599,7 +599,7 @@ fn handle_user(
 
             actor.continue(state)
         }
-//---------------------------------------------- RegisterUser -------------------------------------------
+//---------------------------------------------- ThinkingMessage -------------------------------------------
         gen_types.InjectThinkingMessage -> {
 
             distribute_message(state)
@@ -675,6 +675,58 @@ fn handle_user(
                             )
             actor.continue(new_state)
         }
+
+//---------------------------------------------- LoginUser -------------------------------------------
+
+        gen_types.InjectLoginUser -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting login user")
+
+            let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
+
+            let new_state = gen_types.UserState(
+                ..state,
+                pending_reqs: new_pending,
+            )
+            utls.send_to_engine(#("login_user", self(), state.user_name, "test_pwd", req_id))
+
+            actor.continue(new_state)
+
+        }
+
+
+        gen_types.LoginUserSuccess(user_id, req_id) -> {
+
+            io.println("[CLIENT]: login client with uuid: " <> user_id)
+
+            let new_pending = user_metrics.send_timing_metrics(
+                req_id, "login_user", state.pending_reqs, state.metrics_pid)
+
+            let new_state = gen_types.UserState(
+                                ..state,
+                                uuid: user_id, 
+                                pending_reqs: new_pending,
+                            )
+            actor.continue(new_state)
+        }
+
+        gen_types.LoginUserFailed(name, fail_reason, req_id) -> {
+
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to login user " <> name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+
+            utls.send_to_pid(
+                state.metrics_pid, 
+                #("record_action", "register_user", "failed")
+            )
+            let new_pending = dict.drop(state.pending_reqs, [req_id])
+            let new_state = gen_types.UserState(
+                                ..state,
+                                pending_reqs: new_pending,
+                            )
+            actor.continue(new_state)
+        }
+
 
 //---------------------------------------------- CreateSubreddit ----------------------------------------
 
