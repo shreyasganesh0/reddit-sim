@@ -18,6 +18,8 @@ type ReplError {
     ReadError(in.Error)
 
     RequestError(httpc.HttpError)
+
+    UnRegisteredError
 }
 
 
@@ -37,7 +39,7 @@ fn start_repl(state: response_handlers.ReplState) {
 
             _ -> {
 
-                use #(req, resp_handler) <- result.try(parse_line(line))
+                use #(req, resp_handler) <- result.try(parse_line(line, state))
                 use resp <- result.try(
                     result.map_error(
                         httpc.configure()
@@ -76,6 +78,11 @@ fn start_repl(state: response_handlers.ReplState) {
 
                     io.println("[CLIENT]: couldnt send request")
                 }
+
+                UnRegisteredError -> {
+
+                    io.println("[CLIENT]: must be registered/loggedin before performing this command")
+                }
             }
 
             state
@@ -85,7 +92,7 @@ fn start_repl(state: response_handlers.ReplState) {
     start_repl(new_state)
 }
 
-fn parse_line(line: String) -> Result(
+fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
     #(
         request.Request(BitArray),
         fn(response.Response(BitArray), response_handlers.ReplState) -> response_handlers.ReplState
@@ -127,6 +134,35 @@ fn parse_line(line: String) -> Result(
                                 #(
                                 request_builders.login_user(username, password),
                                 response_handlers.login_user
+                                )
+                            )
+                        }
+
+                        _ -> Error(CommandError)
+                    }
+                }
+
+                "create-subreddit" -> {
+
+                    case rest {
+
+                        [subreddit_name] -> {
+
+                            use user_id <- result.try(
+                                fn() {
+                                    case state.user_id == "" {
+
+                                        True -> Error(UnRegisteredError)
+
+                                        False -> Ok(state.user_id)
+                                    }
+                                }()
+                            )
+
+                            Ok(
+                                #(
+                                request_builders.create_subreddit(subreddit_name, user_id),
+                                response_handlers.create_subreddit
                                 )
                             )
                         }

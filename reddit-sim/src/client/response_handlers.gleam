@@ -55,6 +55,27 @@ pub fn login_user(resp: response.Response(BitArray), state: ReplState) -> ReplSt
     
 }
 
+pub fn create_subreddit(resp: response.Response(BitArray), state: ReplState) -> ReplState {
+
+    case json.parse_bits(resp.body, gen_decode.rest_create_subreddit_success_decoder()) {
+
+        Ok(gen_types.RestCreateSubredditSuccess(subreddit_id)) -> {
+
+            io.println("[CLIENT]: created subreddit with id "<>subreddit_id)
+            ReplState(
+                ..state,
+                subreddits: [subreddit_id, ..state.subreddits]
+            )
+        }
+
+        _ -> {
+
+            state
+        }
+    }
+    
+}
+
 pub fn logout(_resp: response.Response(BitArray), state: ReplState) -> ReplState {
 
     io.println("[CLIENT]: logged out")
