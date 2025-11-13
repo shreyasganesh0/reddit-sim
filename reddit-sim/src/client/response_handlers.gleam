@@ -106,6 +106,24 @@ pub fn join_subreddit(resp: response.Response(BitArray), state: ReplState) -> Re
     
 }
 
+pub fn leave_subreddit(resp: response.Response(BitArray), state: ReplState) -> ReplState {
+
+    case json.parse_bits(resp.body, gen_decode.rest_leave_subreddit_success_decoder()) {
+
+        Ok(gen_types.RestLeaveSubredditSuccess(subreddit_id)) -> {
+
+            io.println("[CLIENT]: left subreddit with id "<>subreddit_id)
+            state
+        }
+
+        _ -> {
+
+            state
+        }
+    }
+    
+}
+
 pub fn search_subreddit(resp: response.Response(BitArray), state: ReplState) -> ReplState {
 
     case json.parse_bits(resp.body, gen_decode.rest_search_subreddit_success_decoder()) {

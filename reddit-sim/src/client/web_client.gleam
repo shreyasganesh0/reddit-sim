@@ -210,7 +210,6 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                                     fn(_) {SubredditUnknownError}
                                 )
                             )
-                            echo subreddit_id
 
                             Ok(
                                 #(
@@ -251,6 +250,42 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                                 request_builders.search_subreddit(subreddit_name, user_id),
                                 response_handlers.search_subreddit,
                                 new_state
+                                )
+                            )
+                        }
+
+                        _ -> Error(CommandError)
+                    }
+                }
+
+                "leave-subreddit" -> {
+
+                    case rest {
+
+                        [subreddit_name] -> {
+
+                            use user_id <- result.try(
+                                fn() {
+                                    case state.user_id == "" {
+
+                                        True -> Error(UnregisteredError)
+
+                                        False -> Ok(state.user_id)
+                                    }
+                                }()
+                            )
+
+                            use subreddit_id <- result.try(
+                                result.map_error(
+                                    dict.get(state.subreddit_rev_index, subreddit_name),
+                                    fn(_) {SubredditUnknownError}
+                                )
+                            )
+                            Ok(
+                                #(
+                                request_builders.leave_subreddit(subreddit_name, subreddit_id, user_id),
+                                response_handlers.leave_subreddit,
+                                state
                                 )
                             )
                         }
