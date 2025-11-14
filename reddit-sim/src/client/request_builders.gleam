@@ -100,7 +100,6 @@ pub fn leave_subreddit(subreddit_name: String, subreddit_id: String, user_id: St
     |> request.set_method(http.Delete)
 }
 
-
 pub fn search_subreddit(subreddit_name: String, user_id: String) {
 
     let base_req = request.to("http://localhost:4000/api/v1/search_subreddit?q="<>subreddit_name)
@@ -111,3 +110,39 @@ pub fn search_subreddit(subreddit_name: String, user_id: String) {
     |> request.set_header("authorization", user_id)
     |> request.set_method(http.Get)
 }
+
+pub fn create_post(
+    subreddit_name: String,
+    subreddit_id: String,
+    user_id: String,
+    title: String,
+    body: String) {
+
+    let post_body =
+        [
+        #("id", json.string("")),
+        #("title", json.string(title)),
+        #("body", json.string(body)),
+        #("owner_id", json.string("")),
+        #("subreddit_id", json.string(subreddit_id)),
+        #("upvotes", json.int(0)),
+        #("downvotes", json.int(0))
+        ]
+    |> json.object
+
+    let send_body = json.object([#("subreddit_id", json.string(subreddit_id)), #("post", post_body)])
+    |> json.to_string
+    |> bit_array.from_string
+
+    let content_length = bit_array.byte_size(send_body)
+    let base_req = request.to("http://localhost:4000/r/"<>subreddit_name<>"/api/submit")
+    |> result.unwrap(request.new())
+    |> request.map(bit_array.from_string)
+    
+    base_req
+    |> request.set_header("Content-Length", int.to_string(content_length))
+    |> request.set_header("authorization", user_id)
+    |> request.set_body(send_body)
+    |> request.set_method(http.Post)
+}
+

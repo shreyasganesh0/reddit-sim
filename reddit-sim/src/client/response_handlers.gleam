@@ -12,7 +12,8 @@ pub type ReplState {
         user_id: String,
         subreddits: List(String),
         to_update_subreddit_name: String,
-        subreddit_rev_index: Dict(String, String)
+        subreddit_rev_index: Dict(String, String),
+        posts: List(String)
     )
 }
 
@@ -159,3 +160,25 @@ pub fn logout(_resp: response.Response(BitArray), state: ReplState) -> ReplState
     )
     
 }
+
+pub fn create_post(resp: response.Response(BitArray), state: ReplState) -> ReplState {
+
+    case json.parse_bits(resp.body, gen_decode.rest_create_post_success_decoder()) {
+
+        Ok(gen_types.RestCreatePostSuccess(post_id)) -> {
+
+            io.println("[CLIENT]: created post with id "<>post_id)
+            ReplState(
+                ..state,
+                posts: [post_id, ..state.posts]
+            )
+        }
+
+        _ -> {
+
+            state
+        }
+    }
+    
+}
+

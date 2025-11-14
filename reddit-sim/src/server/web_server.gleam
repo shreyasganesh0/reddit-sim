@@ -69,6 +69,11 @@ fn request_handler(
                     api_handlers.join_subreddit(req, engine_sub, self_selector)
                 }
 
+                ["submit"] -> {
+
+                    api_handlers.create_post(req, engine_sub, self_selector)
+                }
+
                 _ -> api_handlers.error_page_not_found()
             }
         }

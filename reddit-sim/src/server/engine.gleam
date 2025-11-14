@@ -281,19 +281,20 @@ fn handle_engine(
 
             let res = {
                 use _ <- result.try(utls.validate_request(send_pid, uuid, state.user_pid_map, state.users_data))
-                case dict.has_key(state.subreddit_rev_index, subreddit_name) {
+                use _ <- result.try(
+                        fn() {
+                        case dict.has_key(state.subreddit_rev_index, subreddit_name) {
 
-                    False -> {
+                            True -> {
+                                let fail_reason = "Subreddit already exists"
+                                Error(fail_reason)
+                            }
 
-                        Ok(Nil)
-                    }
-                    
-                    True -> {
-
-                        let fail_reason = "Subreddit already exists"
-                        Error(fail_reason)
-                    }
-                }
+                            False -> Ok(Nil)
+                        }
+                        }()
+                    )
+                Ok(Nil)
             }
 
             let new_state = case res {

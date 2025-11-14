@@ -499,12 +499,10 @@ pub fn create_subreddit(
         mist.read_body(req, 1024 * 1024), 
         fn (_) {
 
-            Error(
-                response.new(400)
-                |>response.set_body(
-                    bytes_tree.new()
-                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
-                )
+            response.new(400)
+            |>response.set_body(
+                bytes_tree.new()
+                |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
             )
         }))
     use req_parsed <- result.try(
@@ -512,12 +510,10 @@ pub fn create_subreddit(
                 req_bytes.body |> json.parse_bits(gen_decode.rest_create_subreddit_decoder()),
                 fn(_) {
 
-                    Error(
-                        response.new(400)
-                        |>response.set_body(
-                            bytes_tree.new()
-                            |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
-                        )
+                    response.new(400)
+                    |>response.set_body(
+                        bytes_tree.new()
+                        |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
                     )
                 }))
     use user_id <- result.try(
@@ -525,14 +521,11 @@ pub fn create_subreddit(
             request.get_header(req, "authorization"),
             fn(_) {
 
-                Error(
-                    response.new(401)
-                    |>response.set_body(
-                        bytes_tree.new()
-                        |>bytes_tree.append(bit_array.from_string("Unauthorized"))
-                    )
+                response.new(401)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Unauthorized"))
                 )
-
             }
         )
     )
@@ -548,17 +541,32 @@ pub fn create_subreddit(
         process.selector_receive(self_selector, 1000),
         fn(_) {
 
-            Error(
-                response.new(500)
-                |>response.set_body(
-                    bytes_tree.new()
-                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
-                )
+            response.new(500)
+            |>response.set_body(
+                bytes_tree.new()
+                |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
             )
         }
         ))
 
-    let assert gen_types.CreateSubredditSuccess(subreddit_id, _) = resp_ans 
+    use resp_subreddit_id <- result.try(
+        fn() {
+        case resp_ans {
+
+            gen_types.CreateSubredditSuccess(subreddit_id, _) -> {Ok(subreddit_id)}
+
+            _ -> {
+                Error(
+                response.new(400)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+                )
+                )
+            }
+        }
+        }()
+    )
     Ok(
         response.new(200)
         |> response.set_body(
@@ -566,7 +574,7 @@ pub fn create_subreddit(
                 bytes_tree.new()
                 |>bytes_tree.append(
                     json.object(
-                    [#("subreddit_id", json.string(subreddit_id))]
+                    [#("subreddit_id", json.string(resp_subreddit_id))]
                     )
                     |>json.to_string
                     |> bit_array.from_string
@@ -756,6 +764,114 @@ pub fn leave_subreddit(
                 |>bytes_tree.append(
                     json.object(
                     [#("subreddit_id", json.string(resp_subreddit_id))]
+                    )
+                    |>json.to_string
+                    |> bit_array.from_string
+                )
+            )
+        )
+        |> response.set_header("content-type", content_type)
+    )
+    }
+    |> result.unwrap(response.new(404)|>response.set_body(mist.Bytes(bytes_tree.new())))
+}
+
+pub fn create_post(
+    req: request.Request(mist.Connection),
+    engine_pid: process.Pid,
+    self_selector: process.Selector(gen_types.UserMessage)
+    ) -> response.Response(mist.ResponseData) {
+
+    io.println("[SERVER]: recvd create post request")
+
+    let content_type = request.get_header(req, "content-type")
+    |> result.unwrap("plain/text")
+
+    {
+    use req_bytes <- result.try(
+        result.map_error(
+        mist.read_body(req, 8 * 1024 * 1024 * 1024), 
+        fn (_) {
+
+                response.new(400)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+            )
+        }))
+    echo req_bytes
+    use req_parsed <- result.try(
+                result.map_error(
+                req_bytes.body |> json.parse_bits(gen_decode.rest_create_post_decoder()),
+                fn(_) {
+
+                    response.new(400)
+                    |>response.set_body(
+                        bytes_tree.new()
+                        |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+                    )
+                }))
+    echo req_parsed
+    use user_id <- result.try(
+        result.map_error(
+            request.get_header(req, "authorization"),
+            fn(_) {
+
+                response.new(401)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Unauthorized"))
+                )
+            }
+        )
+    )
+
+
+    let assert gen_types.RestCreatePost(subreddit_id, post) = req_parsed
+    let post = post |> gen_decode.post_serializer
+
+    #("create_post", self(), user_id, subreddit_id, post, "") 
+    |> utls.send_to_pid(engine_pid, _)
+
+    use resp_ans <- result.try(
+        result.map_error(
+        process.selector_receive(self_selector, 1000),
+        fn(_) {
+
+            response.new(500)
+            |>response.set_body(
+                bytes_tree.new()
+                |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+            )
+        }
+        ))
+
+    use resp_post_id <- result.try(
+        fn() {
+        case resp_ans {
+
+            gen_types.CreatePostSuccess(post_id, _) -> {Ok(post_id)}
+
+            _ -> {
+                Error(
+                response.new(400)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+                )
+                )
+            }
+        }
+        }()
+    )
+    Ok(
+        response.new(200)
+        |> response.set_body(
+            mist.Bytes(
+                bytes_tree.new()
+                |>bytes_tree.append(
+                    json.object(
+                    [#("post_id", json.string(resp_post_id))]
                     )
                     |>json.to_string
                     |> bit_array.from_string

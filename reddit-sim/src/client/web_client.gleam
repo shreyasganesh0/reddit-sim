@@ -293,6 +293,53 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                         _ -> Error(CommandError)
                     }
                 }
+
+                "create-post" -> {
+
+                    case rest {
+
+                        ["--subreddit-name", subreddit_name, ..post] -> {
+
+                            use user_id <- result.try(
+                                fn() {
+                                    case state.user_id == "" {
+
+                                        True -> Error(UnregisteredError)
+
+                                        False -> Ok(state.user_id)
+                                    }
+                                }()
+                            )
+                            use subreddit_id <- result.try(
+                                result.map_error(
+                                    dict.get(state.subreddit_rev_index, subreddit_name),
+                                    fn(_) {SubredditUnknownError}
+                                )
+                            )
+                            use #(title, body) <- result.try(
+                                fn(){
+
+                                    case post {
+
+                                        ["--title", title, "--body", body] -> Ok(#(title, body))
+
+                                        _ -> Error(CommandError)
+                                    }
+                                }()
+                            )
+
+                            Ok(
+                                #(
+                                request_builders.create_post(subreddit_name, subreddit_id, user_id, title, body),
+                                response_handlers.create_post,
+                                state
+                                )
+                            )
+                        }
+
+                        _ -> Error(CommandError)
+                    }
+                }
                 
                 _ -> Error(CommandError)
             }
@@ -309,7 +356,8 @@ pub fn main() {
                         user_id: "",
                         subreddits: [],
                         to_update_subreddit_name: "",
-                        subreddit_rev_index: dict.new()
+                        subreddit_rev_index: dict.new(),
+                        posts: []
                     )
     start_repl(init_state)
 }
