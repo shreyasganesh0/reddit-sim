@@ -7,6 +7,10 @@ import gleam/dict
 import gleam/result
 import gleam/bit_array
 
+import generated/generated_types as gen_types
+
+import utls
+
 pub fn register_user(username: String, password: String) {
 
     let send_body = dict.from_list([#("username", username), #("password", password)])
@@ -119,16 +123,16 @@ pub fn create_post(
     body: String) {
 
     let post_body =
-        [
-        #("id", json.string("")),
-        #("title", json.string(title)),
-        #("body", json.string(body)),
-        #("owner_id", json.string("")),
-        #("subreddit_id", json.string(subreddit_id)),
-        #("upvotes", json.int(0)),
-        #("downvotes", json.int(0))
-        ]
-    |> json.object
+        gen_types.Post(
+        id: "",
+        title: title,
+        body: body,
+        owner_id: "",
+        subreddit_id: subreddit_id,
+        upvotes: 0,
+        downvotes: 0
+    )
+    |> utls.post_jsonify
 
     let send_body = json.object([#("subreddit_id", json.string(subreddit_id)), #("post", post_body)])
     |> json.to_string
@@ -146,3 +150,44 @@ pub fn create_post(
     |> request.set_method(http.Post)
 }
 
+pub fn create_repost(post_id: String, user_id: String) {
+
+    let send_body = dict.from_list([#("post_id", post_id)])
+    |> json.dict(function.identity, json.string)
+    |> json.to_string
+    |> bit_array.from_string
+
+    let content_length = bit_array.byte_size(send_body)
+    let base_req = request.to("http://localhost:4000/api/v1/repost")
+    |> result.unwrap(request.new())
+    |> request.map(bit_array.from_string)
+    
+    base_req
+    |> request.set_header("Content-Length", int.to_string(content_length))
+    |> request.set_header("authorization", user_id)
+    |> request.set_body(send_body)
+    |> request.set_method(http.Post)
+}
+
+pub fn get_post(post_id: String, user_id: String) {
+
+
+    let base_req = request.to("http://localhost:4000/api/v1/post/"<>post_id)
+    |> result.unwrap(request.new())
+    |> request.map(bit_array.from_string)
+    
+    base_req
+    |> request.set_header("authorization", user_id)
+    |> request.set_method(http.Get)
+}
+
+pub fn delete_post(post_id: String, user_id: String) {
+
+    let base_req = request.to("http://localhost:4000/api/v1/post/"<>post_id)
+    |> result.unwrap(request.new())
+    |> request.map(bit_array.from_string)
+    
+    base_req
+    |> request.set_header("authorization", user_id)
+    |> request.set_method(http.Delete)
+}

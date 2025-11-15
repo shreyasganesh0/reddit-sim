@@ -90,7 +90,7 @@ fn init(
                         subreddit_posts_map: dict.new(),
                         posts_data: dict.new(),
                         comments_data: dict.new(),
-                        parent_comment_map: dict.new(),
+                        parent_comments_map: dict.new(),
                         post_subreddit_map: dict.new(),
                         dms_data: dict.new(),
                         shutdown_count: 0,
@@ -548,6 +548,87 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
+        gen_types.CreatePost(send_pid, uuid, subreddit_id, post_data, req_id) -> {
+
+            let res = {
+                use user <- result.try(
+                                    utls.validate_request(
+                                    send_pid,
+                                    uuid,
+                                    state.user_pid_map,
+                                    state.users_data
+                                    )
+                                )
+                use _subreddit_uuid <- result.try(
+                                        result.map_error(
+                                            dict.get(state.subreddits_data, subreddit_id),
+                                            fn(_) {"Subreddit does not exist"}
+                                        )
+                                     )
+                Ok(#(user,subreddit_id))
+            }
+
+            let new_state = case res {
+
+                Ok(#(user, subreddit_uuid)) -> {
+
+                    let post_uuid = uuid.v4_string()
+                    let post_data = gen_types.Post(
+                                    ..post_data,
+                                    subreddit_id: subreddit_uuid,
+                                    owner_id: user.id,
+                                    id: post_uuid
+                                  )
+                    io.println("[ENGINE]: creating post: " <> subreddit_uuid)
+                    let new_state = gen_types.EngineState(
+                                        ..state,
+                                        subreddit_posts_map: dict.upsert(
+                                            state.subreddit_posts_map,
+                                            subreddit_uuid,
+                                            fn(maybe_posts) {
+
+                                                case maybe_posts {
+
+                                                    None -> {
+                                                        [post_uuid]
+                                                    }
+
+                                                    Some(posts_list) -> {
+                                                        [post_uuid, ..posts_list]
+                                                    }
+                                                }
+                                            } 
+                                        ),
+
+                                        post_subreddit_map: dict.insert(
+                                            state.post_subreddit_map,
+                                            post_uuid,
+                                            subreddit_uuid
+                                        ),
+
+                                        posts_data: dict.insert(
+                                            state.posts_data,
+                                            post_uuid,
+                                            post_data
+                                        )
+                                    )
+                    utls.send_to_pid(send_pid, #("create_post_success", post_uuid, req_id))
+                    new_state
+                }
+
+                Error(reason) -> {
+
+                    utls.send_to_pid(send_pid, #("create_post_failed", subreddit_id, reason, req_id))
+                    state
+                }
+
+            }
+
+            actor.continue(new_state)
+        }
+
+//------------------------------------------------------------------------------------------------------
+
         gen_types.CreateRepost(send_pid, uuid, post_id, req_id) -> {
 
             let res = {
@@ -640,11 +721,9 @@ fn handle_engine(
             actor.continue(new_state)
         }
 
-
-
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.CreatePost(send_pid, uuid, subreddit_id, post_data, req_id) -> {
+        gen_types.DeletePost(send_pid, uuid, post_id, req_id) -> {
 
             let res = {
                 use user <- result.try(
@@ -655,66 +734,83 @@ fn handle_engine(
                                     state.users_data
                                     )
                                 )
-                use _subreddit_uuid <- result.try(
+                use post <- result.try(
                                         result.map_error(
-                                            dict.get(state.subreddits_data, subreddit_id),
-                                            fn(_) {"Subreddit does not exist"}
+                                            dict.get(state.posts_data, post_id),
+                                            fn(_) {"post does not exist"}
                                         )
                                      )
-                Ok(#(user,subreddit_id))
+                use _ <- result.try(
+                            fn() {
+                                case post.owner_id == user.id {
+
+                                    True -> Ok(Nil)
+
+                                    False -> Error("not the owner of the post")
+                                }
+                            }()
+                        )
+                Ok(post)
             }
 
             let new_state = case res {
 
-                Ok(#(user, subreddit_uuid)) -> {
+                Ok(post_data) -> {
 
-                    let post_uuid = uuid.v4_string()
-                    let post_data = gen_types.Post(
-                                    ..post_data,
-                                    subreddit_id: subreddit_uuid,
-                                    owner_id: user.id,
-                                    id: post_uuid
-                                  )
-                    io.println("[ENGINE]: creating post: " <> subreddit_uuid)
-                    let new_state = gen_types.EngineState(
-                                        ..state,
-                                        subreddit_posts_map: dict.upsert(
-                                            state.subreddit_posts_map,
-                                            subreddit_uuid,
-                                            fn(maybe_posts) {
+                    case dict.get(state.subreddits_data, post_data.subreddit_id) {
 
-                                                case maybe_posts {
+                        Ok(_) -> {
 
-                                                    None -> {
-                                                        [post_uuid]
-                                                    }
+                            io.println("[ENGINE]: delete post: " <> post_id)
+                            let new_state = gen_types.EngineState(
+                                                ..state,
+                                                subreddit_posts_map: dict.upsert(
+                                                    state.subreddit_posts_map,
+                                                    post_data.subreddit_id,
+                                                    fn(maybe_posts) {
 
-                                                    Some(posts_list) -> {
-                                                        [post_uuid, ..posts_list]
-                                                    }
-                                                }
-                                            } 
-                                        ),
+                                                        case maybe_posts {
 
-                                        post_subreddit_map: dict.insert(
-                                            state.post_subreddit_map,
-                                            post_uuid,
-                                            subreddit_uuid
-                                        ),
+                                                            None -> {
+                                                                []
+                                                            }
 
-                                        posts_data: dict.insert(
-                                            state.posts_data,
-                                            post_uuid,
-                                            post_data
-                                        )
-                                    )
-                    utls.send_to_pid(send_pid, #("create_post_success", post_uuid, req_id))
-                    new_state
+                                                            Some(posts_list) -> {
+                                                                list.drop_while(
+                                                                    posts_list,
+                                                                    fn(a) {a == post_id}
+                                                                )
+                                                            }
+                                                        }
+                                                    } 
+                                                ),
+
+                                                post_subreddit_map: dict.delete(
+                                                    state.post_subreddit_map,
+                                                    post_id,
+                                                ),
+
+                                                posts_data: dict.delete(
+                                                    state.posts_data,
+                                                    post_id,
+                                                )
+                                            )
+                            utls.send_to_pid(send_pid, #("delete_post_success", post_id, req_id))
+                            new_state
+                        }
+
+                        Error(_) -> {
+
+                            let reason = "post was in a invalid state"
+                            utls.send_to_pid(send_pid, #("delete_post_failed", post_id, reason, req_id))
+                            state
+                        }
+                    }
                 }
 
                 Error(reason) -> {
 
-                    utls.send_to_pid(send_pid, #("create_post_failed", subreddit_id, reason, req_id))
+                    utls.send_to_pid(send_pid, #("delete_post_failed", post_id, reason, req_id))
                     state
                 }
 
@@ -723,6 +819,87 @@ fn handle_engine(
             actor.continue(new_state)
         }
 
+//------------------------------------------------------------------------------------------------------
+
+        gen_types.GetPost(send_pid, uuid, post_id, req_id) -> {
+
+            let res = {
+                use user <- result.try(
+                                    utls.validate_request(
+                                    send_pid,
+                                    uuid,
+                                    state.user_pid_map,
+                                    state.users_data
+                                    )
+                                )
+                use post <- result.try(
+                                result.map_error(
+                                    dict.get(state.posts_data, post_id),
+                                    fn(_) {"post does not exist"}
+                                )
+                             )
+                Ok(#(user, post))
+            }
+
+            let new_state = case res {
+
+                Ok(#(_user, post_data)) -> {
+
+                    case dict.get(state.subreddits_data, post_data.subreddit_id) {
+
+                        Ok(_) -> {
+
+                            io.println("[ENGINE]: fetching post details: " <> post_data.id)
+
+                            let comments_list = case dict.get(state.parent_comments_map, post_data.id) {
+
+                                Ok(comment_id_list) -> {
+
+                                    let comments_list: List(gen_types.Comment) = []
+                                    list.fold(
+                                        comment_id_list,
+                                        comments_list,
+                                        fn(acc, a) {
+                                            case dict.get(state.comments_data, a) {
+                                                Ok (comment) -> {[comment, ..acc]}
+
+                                                Error(_) -> acc
+                                            } 
+                                        }
+                                    )
+                                }
+
+                                Error(_) -> {
+
+                                    []
+                                }
+                            }
+
+                            let post_data = post_data |> gen_decoders.post_serializer
+                            let comments_list = list.map(comments_list, gen_decoders.comment_serializer)
+                            utls.send_to_pid(send_pid, #("get_post_success", post_data, comments_list, req_id))
+                            state
+                        }
+
+                        Error(_) -> {
+
+                            let reason = "post was in a invalid state"
+                            utls.send_to_pid(send_pid, #("get_post_failed", post_id, reason, req_id))
+                            state
+                        }
+                    }
+                }
+
+                Error(reason) -> {
+
+                    utls.send_to_pid(send_pid, #("get_post_failed", post_id, reason, req_id))
+                    state
+                }
+
+            }
+
+            actor.continue(new_state)
+        }
 
 //------------------------------------------------------------------------------------------------------
 
@@ -737,7 +914,7 @@ fn handle_engine(
                                     state.users_data
                                     )
                                 )
-                use _exists <- result.try(
+                use _parent <- result.try(
                                     utls.check_comment_parent(
                                         commentable_id,
                                         state.posts_data,
@@ -759,10 +936,24 @@ fn handle_engine(
                                   )
                     let new_state = gen_types.EngineState(
                         ..state,
-                        parent_comment_map: dict.insert(
-                            state.parent_comment_map,
+                        parent_comments_map: dict.upsert(
+                            state.parent_comments_map,
                             commentable_id,
-                            comment_uuid,
+                            fn(maybe_comments) {
+
+                                case maybe_comments {
+
+                                    None -> {
+
+                                        [comment_uuid]       
+                                    }
+
+                                    Some(comments_list) -> {
+
+                                        [comment_uuid, ..comments_list]
+                                    }
+                                }
+                            }
                         ),
                         comments_data: dict.insert(
                             state.comments_data,
@@ -770,6 +961,7 @@ fn handle_engine(
                             comment
                         )
                     )
+                    
                     utls.send_to_pid(send_pid, #("create_comment_success", comment_uuid, req_id)) 
                     new_state
                 }

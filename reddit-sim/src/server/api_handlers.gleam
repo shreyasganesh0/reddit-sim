@@ -883,3 +883,276 @@ pub fn create_post(
     }
     |> result.unwrap(response.new(404)|>response.set_body(mist.Bytes(bytes_tree.new())))
 }
+
+pub fn create_repost(
+    req: request.Request(mist.Connection),
+    engine_pid: process.Pid,
+    self_selector: process.Selector(gen_types.UserMessage)
+    ) -> response.Response(mist.ResponseData) {
+
+    io.println("[SERVER]: recvd create repost request")
+
+    let content_type = request.get_header(req, "content-type")
+    |> result.unwrap("plain/text")
+
+    {
+    use req_bytes <- result.try(
+        result.map_error(
+        mist.read_body(req, 8 * 1024 * 1024 * 1024), 
+        fn (_) {
+
+                response.new(400)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+            )
+        }))
+    echo req_bytes
+    use req_parsed <- result.try(
+                result.map_error(
+                req_bytes.body |> json.parse_bits(gen_decode.rest_create_repost_decoder()),
+                fn(_) {
+
+                    response.new(400)
+                    |>response.set_body(
+                        bytes_tree.new()
+                        |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+                    )
+                }))
+    echo req_parsed
+    use user_id <- result.try(
+        result.map_error(
+            request.get_header(req, "authorization"),
+            fn(_) {
+
+                response.new(401)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Unauthorized"))
+                )
+            }
+        )
+    )
+
+
+    let assert gen_types.RestCreateRepost(post_id) = req_parsed
+
+    #("create_repost", self(), user_id, post_id, "") 
+    |> utls.send_to_pid(engine_pid, _)
+
+    use resp_ans <- result.try(
+        result.map_error(
+        process.selector_receive(self_selector, 1000),
+        fn(_) {
+
+            response.new(500)
+            |>response.set_body(
+                bytes_tree.new()
+                |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+            )
+        }
+        ))
+
+    use resp_post_id <- result.try(
+        fn() {
+        case resp_ans {
+
+            gen_types.CreateRepostSuccess(post_id, _) -> {Ok(post_id)}
+
+            _ -> {
+                Error(
+                response.new(400)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+                )
+                )
+            }
+        }
+        }()
+    )
+    Ok(
+        response.new(200)
+        |> response.set_body(
+            mist.Bytes(
+                bytes_tree.new()
+                |>bytes_tree.append(
+                    json.object(
+                    [#("post_id", json.string(resp_post_id))]
+                    )
+                    |>json.to_string
+                    |> bit_array.from_string
+                )
+            )
+        )
+        |> response.set_header("content-type", content_type)
+    )
+    }
+    |> result.unwrap(response.new(404)|>response.set_body(mist.Bytes(bytes_tree.new())))
+}
+
+pub fn delete_post(
+    req: request.Request(mist.Connection),
+    engine_pid: process.Pid,
+    self_selector: process.Selector(gen_types.UserMessage),
+    post_id: String
+    ) -> response.Response(mist.ResponseData) {
+
+    io.println("[SERVER]: recvd delete post request")
+
+    let content_type = request.get_header(req, "content-type")
+    |> result.unwrap("plain/text")
+
+    {
+    use user_id <- result.try(
+        result.map_error(
+            request.get_header(req, "authorization"),
+            fn(_) {
+
+                response.new(401)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Unauthorized"))
+                )
+            }
+        )
+    )
+
+    #("delete_post", self(), user_id, post_id, "") 
+    |> utls.send_to_pid(engine_pid, _)
+
+    use resp_ans <- result.try(
+        result.map_error(
+        process.selector_receive(self_selector, 1000),
+        fn(_) {
+
+            response.new(500)
+            |>response.set_body(
+                bytes_tree.new()
+                |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+            )
+        }
+        ))
+
+    use resp_post_id <- result.try(
+        fn() {
+        case resp_ans {
+
+            gen_types.DeletePostSuccess(post_id, _) -> {Ok(post_id)}
+
+            _ -> {
+                Error(
+                response.new(400)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+                )
+                )
+            }
+        }
+        }()
+    )
+    Ok(
+        response.new(200)
+        |> response.set_body(
+            mist.Bytes(
+                bytes_tree.new()
+                |>bytes_tree.append(
+                    json.object(
+                    [#("post_id", json.string(resp_post_id))]
+                    )
+                    |>json.to_string
+                    |> bit_array.from_string
+                )
+            )
+        )
+        |> response.set_header("content-type", content_type)
+    )
+    }
+    |> result.unwrap(response.new(404)|>response.set_body(mist.Bytes(bytes_tree.new())))
+}
+
+pub fn get_post(
+    req: request.Request(mist.Connection),
+    engine_pid: process.Pid,
+    self_selector: process.Selector(gen_types.UserMessage),
+    post_id: String
+    ) -> response.Response(mist.ResponseData) {
+
+    io.println("[SERVER]: recvd get post request")
+
+    let content_type = request.get_header(req, "content-type")
+    |> result.unwrap("plain/text")
+
+    {
+    use user_id <- result.try(
+        result.map_error(
+            request.get_header(req, "authorization"),
+            fn(_) {
+
+                response.new(401)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Unauthorized"))
+                )
+            }
+        )
+    )
+
+    #("get_post", self(), user_id, post_id, "") 
+    |> utls.send_to_pid(engine_pid, _)
+
+    use resp_ans <- result.try(
+        result.map_error(
+        process.selector_receive(self_selector, 1000),
+        fn(_) {
+
+            response.new(500)
+            |>response.set_body(
+                bytes_tree.new()
+                |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+            )
+        }
+        ))
+
+    use #(resp_post, resp_comments) <- result.try(
+        fn() {
+        case resp_ans {
+
+            gen_types.GetPostSuccess(post, comments, _) -> {Ok(#(post, comments))}
+
+            _ -> {
+                Error(
+                response.new(400)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+                )
+                )
+            }
+        }
+        }()
+    )
+
+    let post_body = resp_post |> utls.post_jsonify
+    let comment_list_body = json.array(resp_comments, utls.comment_jsonify)
+    Ok(
+        response.new(200)
+        |> response.set_body(
+            mist.Bytes(
+                bytes_tree.new()
+                |>bytes_tree.append(
+                    json.object(
+                    [#("post", post_body), #("comments_list", comment_list_body)]
+                    )
+                    |>json.to_string
+                    |> bit_array.from_string
+                )
+            )
+        )
+        |> response.set_header("content-type", content_type)
+    )
+    }
+    |> result.unwrap(response.new(404)|>response.set_body(mist.Bytes(bytes_tree.new())))
+}
+

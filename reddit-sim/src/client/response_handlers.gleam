@@ -2,6 +2,7 @@ import gleam/io
 import gleam/http/response
 import gleam/json
 import gleam/dict.{type Dict}
+import gleam/list
 
 import generated/generated_decoders as gen_decode
 import generated/generated_types as gen_types
@@ -182,3 +183,70 @@ pub fn create_post(resp: response.Response(BitArray), state: ReplState) -> ReplS
     
 }
 
+pub fn create_repost(resp: response.Response(BitArray), state: ReplState) -> ReplState {
+
+    case json.parse_bits(resp.body, gen_decode.rest_create_repost_success_decoder()) {
+
+        Ok(gen_types.RestCreateRepostSuccess(post_id)) -> {
+
+            io.println("[CLIENT]: created repost with id "<>post_id)
+            ReplState(
+                ..state,
+                posts: [post_id, ..state.posts]
+            )
+        }
+
+        _ -> {
+
+            state
+        }
+    }
+    
+}
+
+pub fn delete_post(resp: response.Response(BitArray), state: ReplState) -> ReplState {
+
+    case json.parse_bits(resp.body, gen_decode.rest_delete_post_success_decoder()) {
+
+        Ok(gen_types.RestDeletePostSuccess(post_id)) -> {
+
+            io.println("[CLIENT]: deleted post with id "<>post_id)
+            ReplState(
+                ..state,
+                posts: list.drop_while(
+                    state.posts,
+                    fn(a) {a == post_id}
+                )
+            )
+        }
+
+        _ -> {
+
+            state
+        }
+    }
+    
+}
+
+pub fn get_post(resp: response.Response(BitArray), state: ReplState) -> ReplState {
+
+    case json.parse_bits(resp.body, gen_decode.rest_get_post_success_decoder()) {
+
+        Ok(gen_types.RestGetPostSuccess(post, comments)) -> {
+
+            io.println("[CLIENT]: created repost with id "<>post.id)
+            echo post
+            echo comments
+            ReplState(
+                ..state,
+                posts: [post.id, ..state.posts]
+            )
+        }
+
+        _ -> {
+
+            state
+        }
+    }
+    
+}

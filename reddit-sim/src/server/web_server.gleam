@@ -56,6 +56,12 @@ fn request_handler(
 
                     api_handlers.create_subreddit(req, engine_sub, self_selector)
                 }
+
+                ["repost"] -> {
+
+                    api_handlers.create_repost(req, engine_sub, self_selector)
+                }
+
                 _ -> api_handlers.error_page_not_found()
             }
         }
@@ -91,6 +97,19 @@ fn request_handler(
             }
         }
 
+        http.Delete, ["api", "v1", ..rest] -> {
+
+            case rest {
+
+                ["post", post_id] -> {
+
+                    api_handlers.delete_post(req, engine_sub, self_selector, post_id)
+                }
+
+                _ -> api_handlers.error_page_not_found()
+            }
+        }
+
         http.Get, ["api", "v1", ..rest] -> {
 
             case rest {
@@ -104,6 +123,12 @@ fn request_handler(
 
                     api_handlers.search_subreddit(req, engine_sub, self_selector)
                 }
+
+                ["post", post_id] -> {
+
+                    api_handlers.get_post(req, engine_sub, self_selector, post_id)
+                }
+
                 _ -> api_handlers.error_page_not_found()
             }
         }
@@ -111,8 +136,6 @@ fn request_handler(
         _, _ -> api_handlers.error_page_not_found()
     }
 }
-
-
 
 pub fn start() {
 

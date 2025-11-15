@@ -340,6 +340,96 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                         _ -> Error(CommandError)
                     }
                 }
+
+                "repost" -> {
+
+                    case rest {
+
+                        [post_id] -> {
+
+                            use user_id <- result.try(
+                                fn() {
+                                    case state.user_id == "" {
+
+                                        True -> Error(UnregisteredError)
+
+                                        False -> Ok(state.user_id)
+                                    }
+                                }()
+                            )
+
+                            Ok(
+                                #(
+                                request_builders.create_repost(post_id, user_id),
+                                response_handlers.create_repost,
+                                state
+                                )
+                            )
+                        }
+
+                        _ -> Error(CommandError)
+                    }
+                }
+
+                "delete-post" -> {
+
+                    case rest {
+
+                        [post_id] -> {
+
+                            use user_id <- result.try(
+                                fn() {
+                                    case state.user_id == "" {
+
+                                        True -> Error(UnregisteredError)
+
+                                        False -> Ok(state.user_id)
+                                    }
+                                }()
+                            )
+
+                            Ok(
+                                #(
+                                request_builders.delete_post(post_id, user_id),
+                                response_handlers.delete_post,
+                                state
+                                )
+                            )
+                        }
+
+                        _ -> Error(CommandError)
+                    }
+                }
+
+                "get-post" -> {
+
+                    case rest {
+
+                        [post_id] -> {
+
+                            use user_id <- result.try(
+                                fn() {
+                                    case state.user_id == "" {
+
+                                        True -> Error(UnregisteredError)
+
+                                        False -> Ok(state.user_id)
+                                    }
+                                }()
+                            )
+
+                            Ok(
+                                #(
+                                request_builders.get_post(post_id, user_id),
+                                response_handlers.get_post,
+                                state
+                                )
+                            )
+                        }
+
+                        _ -> Error(CommandError)
+                    }
+                }
                 
                 _ -> Error(CommandError)
             }

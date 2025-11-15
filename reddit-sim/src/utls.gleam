@@ -4,6 +4,7 @@ import gleam/list
 import gleam/result
 import gleam/dict.{type Dict}
 import gleam/erlang/atom
+import gleam/json
 
 import generated/generated_types as gen_types
 
@@ -131,4 +132,31 @@ pub fn check_comment_parent(
             }
         }
     }
+}
+
+pub fn post_jsonify(post: gen_types.Post) {
+
+        [
+        #("id", json.string(post.id)),
+        #("title", json.string(post.title)),
+        #("body", json.string(post.body)),
+        #("owner_id", json.string(post.owner_id)),
+        #("upvotes", json.int(post.upvotes)),
+        #("downvotes", json.int(post.downvotes)),
+        #("subreddit_id", json.string(post.subreddit_id)),
+        ]
+    |> json.object
+}
+
+pub fn comment_jsonify(comment: gen_types.Comment) {
+
+        [
+        #("id", json.string(comment.id)),
+        #("body", json.string(comment.body)),
+        #("parent_id", json.string(comment.parent_id)),
+        #("owner_id", json.string(comment.owner_id)),
+        #("upvotes", json.int(comment.upvotes)),
+        #("downvotes", json.int(comment.downvotes)),
+        ]
+        |> json.object
 }

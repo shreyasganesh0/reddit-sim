@@ -1021,6 +1021,64 @@ fn handle_user(
             actor.continue(state)
         }
 
+//---------------------------------------------- DeletePost -------------------------------------------
+
+        gen_types.InjectDeletePost -> {
+
+            let assert [post_to_send] = list.sample(state.posts, 1)
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting create post")
+            let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
+
+            let state = gen_types.UserState(
+                ..state,
+                pending_reqs: new_pending,
+            )
+            utls.send_to_engine(
+                #(
+                    "delete_post",
+                    self(), 
+                    state.uuid,
+                    post_to_send,
+                    req_id
+                )
+            )
+            actor.continue(state)
+        }
+        
+        gen_types.DeletePostSuccess(post_id, req_id) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully deleted post" <> post_id)
+
+            let new_pending = user_metrics.send_timing_metrics(
+                req_id, "delete_post", state.pending_reqs, state.metrics_pid)
+
+            let new_state = gen_types.UserState(
+                                ..state,
+                                pending_reqs: new_pending,
+                                posts: [post_id, ..state.posts],
+                            )
+
+            actor.continue(new_state)
+        }
+
+        gen_types.DeletePostFailed(post_id, fail_reason, req_id) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to delete post " <> post_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+
+            utls.send_to_pid(
+                state.metrics_pid, 
+                #("record_action", "delete_post", "failed")
+            )
+            let new_pending = dict.drop(state.pending_reqs, [req_id])
+            let state = gen_types.UserState(
+                                ..state,
+                                pending_reqs: new_pending,
+                            )
+            actor.continue(state)
+        }
+
+
+
 //---------------------------------------------- CreateRepost -------------------------------------------
 
         gen_types.InjectCreateRepost -> {
@@ -1068,6 +1126,62 @@ fn handle_user(
             utls.send_to_pid(
                 state.metrics_pid, 
                 #("record_action", "create_repost", "failed")
+            )
+            let new_pending = dict.drop(state.pending_reqs, [req_id])
+            let state = gen_types.UserState(
+                                ..state,
+                                pending_reqs: new_pending,
+                            )
+            actor.continue(state)
+        }
+
+//---------------------------------------------- GetPost -------------------------------------------
+
+        gen_types.InjectGetPost -> {
+
+            let assert [post_to_send] = list.sample(state.posts, 1)
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting get post")
+            let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
+
+            let state = gen_types.UserState(
+                ..state,
+                pending_reqs: new_pending,
+            )
+            utls.send_to_engine(
+                #(
+                    "get_post",
+                    self(), 
+                    state.uuid,
+                    post_to_send,
+                    req_id
+                )
+            )
+            actor.continue(state)
+        }
+        
+        gen_types.GetPostSuccess(post, _comments_list, req_id) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully got post" <> post.id)
+
+            let new_pending = user_metrics.send_timing_metrics(
+                req_id, "get_post", state.pending_reqs, state.metrics_pid)
+
+            let new_state = gen_types.UserState(
+                                ..state,
+                                pending_reqs: new_pending,
+                                posts: [post.id, ..state.posts],
+                            )
+
+            actor.continue(new_state)
+        }
+
+        gen_types.GetPostFailed(post_id, fail_reason, req_id) -> {
+
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to delete post " <> post_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+
+            utls.send_to_pid(
+                state.metrics_pid, 
+                #("record_action", "get_post", "failed")
             )
             let new_pending = dict.drop(state.pending_reqs, [req_id])
             let state = gen_types.UserState(
