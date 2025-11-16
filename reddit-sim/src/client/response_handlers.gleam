@@ -14,7 +14,8 @@ pub type ReplState {
         subreddits: List(String),
         to_update_subreddit_name: String,
         subreddit_rev_index: Dict(String, String),
-        posts: List(String)
+        posts: List(String),
+        comments: List(String)
     )
 }
 
@@ -201,7 +202,6 @@ pub fn create_repost(resp: response.Response(BitArray), state: ReplState) -> Rep
             state
         }
     }
-    
 }
 
 pub fn delete_post(resp: response.Response(BitArray), state: ReplState) -> ReplState {
@@ -249,4 +249,25 @@ pub fn get_post(resp: response.Response(BitArray), state: ReplState) -> ReplStat
         }
     }
     
+}
+
+pub fn create_comment(resp: response.Response(BitArray), state: ReplState) -> ReplState {
+
+    echo resp
+    case json.parse_bits(resp.body, gen_decode.rest_create_comment_success_decoder()) {
+
+        Ok(gen_types.RestCreateCommentSuccess(comment_id)) -> {
+
+            io.println("[CLIENT]: created comment with id "<>comment_id)
+            ReplState(
+                ..state,
+                comments: [comment_id, ..state.comments]
+            )
+        }
+
+        _ -> {
+
+            state
+        }
+    }
 }

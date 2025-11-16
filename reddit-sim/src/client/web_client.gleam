@@ -4,6 +4,7 @@ import gleam/string
 import gleam/result
 import gleam/bit_array
 import gleam/dict
+import gleam/list
 
 import gleam/http/request
 import gleam/http/response
@@ -23,6 +24,8 @@ type ReplError {
     UnregisteredError
 
     SubredditUnknownError
+
+    InvalidParentError
 }
 
 
@@ -90,6 +93,11 @@ fn start_repl(state: response_handlers.ReplState) {
                 SubredditUnknownError -> {
 
                     io.println("[CLIENT]: subreddit not found, try searching for it first")
+                }
+
+                InvalidParentError -> {
+
+                    io.println("[CLIENT]: id was not a post or comment know, try searching for it first")
                 }
             }
 
@@ -431,6 +439,56 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                     }
                 }
                 
+                "create-comment" -> {
+
+                    case rest {
+
+                        ["--parent-id", parent_id, "--body", body] -> {
+
+                            use user_id <- result.try(
+                                fn() {
+                                    case state.user_id == "" {
+
+                                        True -> Error(UnregisteredError)
+
+                                        False -> Ok(state.user_id)
+                                    }
+                                }()
+                            )
+                            use parent_id <- result.try(
+                                result.map_error(
+                                    fn() {
+                                        case list.find(state.posts, fn(a){a==parent_id}) {
+
+                                            Ok(parent_id) -> Ok(parent_id)
+
+                                            Error(_) -> {
+
+                                                case list.find(state.comments, fn(a){a==parent_id}) {
+
+                                                    Ok(id) -> Ok(id)
+
+                                                    Error(_) -> Error(Nil)
+                                                }
+                                            }
+                                        }
+                                    }(),
+                                    fn(_) {InvalidParentError}
+                                )
+                            )
+
+                            Ok(
+                                #(
+                                request_builders.create_comment(parent_id, user_id, body),
+                                response_handlers.create_comment,
+                                state
+                                )
+                            )
+                        }
+
+                        _ -> Error(CommandError)
+                    }
+                }
                 _ -> Error(CommandError)
             }
         }
@@ -447,7 +505,8 @@ pub fn main() {
                         subreddits: [],
                         to_update_subreddit_name: "",
                         subreddit_rev_index: dict.new(),
-                        posts: []
+                        posts: [],
+                        comments: []
                     )
     start_repl(init_state)
 }

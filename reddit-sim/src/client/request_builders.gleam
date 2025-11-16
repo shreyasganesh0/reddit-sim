@@ -191,3 +191,32 @@ pub fn delete_post(post_id: String, user_id: String) {
     |> request.set_header("authorization", user_id)
     |> request.set_method(http.Delete)
 }
+
+pub fn create_comment(parent_id: String, user_id: String, body: String) {
+
+    let comment_body =
+        gen_types.Comment(
+        id: "",
+        parent_id: "",
+        body: body,
+        owner_id: "",
+        upvotes: 0,
+        downvotes: 0
+    )
+    |> utls.comment_jsonify
+
+    let send_body = json.object([#("commentable_id", json.string(parent_id)), #("comment", comment_body)])
+    |> json.to_string
+    |> bit_array.from_string
+
+    let content_length = bit_array.byte_size(send_body)
+    let base_req = request.to("http://localhost:4000/api/v1/comment")
+    |> result.unwrap(request.new())
+    |> request.map(bit_array.from_string)
+    
+    base_req
+    |> request.set_header("Content-Length", int.to_string(content_length))
+    |> request.set_header("authorization", user_id)
+    |> request.set_body(send_body)
+    |> request.set_method(http.Post)
+}

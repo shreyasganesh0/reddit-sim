@@ -62,6 +62,10 @@ fn request_handler(
                     api_handlers.create_repost(req, engine_sub, self_selector)
                 }
 
+                ["comment"] -> {
+
+                    api_handlers.create_comment(req, engine_sub, self_selector)
+                }
                 _ -> api_handlers.error_page_not_found()
             }
         }

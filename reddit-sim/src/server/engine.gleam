@@ -24,7 +24,6 @@ import server/web_server
 @external(erlang, "global", "register_name")
 fn global_register(name: atom.Atom, pid: process.Pid) -> atom.Atom 
 
-
 pub fn create(num_users: Int) -> Nil {
 
     let main_sub = process.new_subject()
@@ -462,7 +461,6 @@ fn handle_engine(
                                             }
 
                                             None -> {
-
                                                 []
                                             }
                                         }

@@ -152,8 +152,8 @@ pub fn comment_jsonify(comment: gen_types.Comment) {
 
         [
         #("id", json.string(comment.id)),
-        #("body", json.string(comment.body)),
         #("parent_id", json.string(comment.parent_id)),
+        #("body", json.string(comment.body)),
         #("owner_id", json.string(comment.owner_id)),
         #("upvotes", json.int(comment.upvotes)),
         #("downvotes", json.int(comment.downvotes)),
