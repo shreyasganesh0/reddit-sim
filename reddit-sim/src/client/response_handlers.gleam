@@ -271,3 +271,21 @@ pub fn create_comment(resp: response.Response(BitArray), state: ReplState) -> Re
         }
     }
 }
+
+pub fn create_vote(resp: response.Response(BitArray), state: ReplState) -> ReplState {
+
+    echo resp
+    case json.parse_bits(resp.body, gen_decode.rest_create_vote_success_decoder()) {
+
+        Ok(gen_types.RestCreateVoteSuccess(comment_id)) -> {
+
+            io.println("[CLIENT]: voted on comment with id "<>comment_id)
+            state
+        }
+
+        _ -> {
+
+            state
+        }
+    }
+}

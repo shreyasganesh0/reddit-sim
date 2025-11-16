@@ -489,6 +489,106 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                         _ -> Error(CommandError)
                     }
                 }
+
+                "downvote" -> {
+
+                    case rest {
+
+                        [parent_id] -> {
+
+                            use user_id <- result.try(
+                                fn() {
+                                    case state.user_id == "" {
+
+                                        True -> Error(UnregisteredError)
+
+                                        False -> Ok(state.user_id)
+                                    }
+                                }()
+                            )
+                            use parent_id <- result.try(
+                                result.map_error(
+                                    fn() {
+                                        case list.find(state.posts, fn(a){a==parent_id}) {
+
+                                            Ok(parent_id) -> Ok(parent_id)
+
+                                            Error(_) -> {
+
+                                                case list.find(state.comments, fn(a){a==parent_id}) {
+
+                                                    Ok(id) -> Ok(id)
+
+                                                    Error(_) -> Error(Nil)
+                                                }
+                                            }
+                                        }
+                                    }(),
+                                    fn(_) {InvalidParentError}
+                                )
+                            )
+
+                            Ok(
+                                #(
+                                request_builders.create_vote(parent_id, user_id, "down"),
+                                response_handlers.create_vote,
+                                state
+                                )
+                            )
+                        }
+                        _ -> Error(CommandError)
+                    }
+                }
+
+                "upvote" -> {
+
+                    case rest {
+
+                        [parent_id] -> {
+
+                            use user_id <- result.try(
+                                fn() {
+                                    case state.user_id == "" {
+
+                                        True -> Error(UnregisteredError)
+
+                                        False -> Ok(state.user_id)
+                                    }
+                                }()
+                            )
+                            use parent_id <- result.try(
+                                result.map_error(
+                                    fn() {
+                                        case list.find(state.posts, fn(a){a==parent_id}) {
+
+                                            Ok(parent_id) -> Ok(parent_id)
+
+                                            Error(_) -> {
+
+                                                case list.find(state.comments, fn(a){a==parent_id}) {
+
+                                                    Ok(id) -> Ok(id)
+
+                                                    Error(_) -> Error(Nil)
+                                                }
+                                            }
+                                        }
+                                    }(),
+                                    fn(_) {InvalidParentError}
+                                )
+                            )
+
+                            Ok(
+                                #(
+                                request_builders.create_vote(parent_id, user_id, "up"),
+                                response_handlers.create_vote,
+                                state
+                                )
+                            )
+                        }
+                        _ -> Error(CommandError)
+                    }
+                }
                 _ -> Error(CommandError)
             }
         }

@@ -220,3 +220,26 @@ pub fn create_comment(parent_id: String, user_id: String, body: String) {
     |> request.set_body(send_body)
     |> request.set_method(http.Post)
 }
+
+pub fn create_vote(parent_id: String, user_id: String, vote_t: String) {
+
+    let send_body = json.object(
+        [
+        #("commentable_id", json.string(parent_id)),
+        #("vote_type", json.string(vote_t))
+        ]
+    )
+    |> json.to_string
+    |> bit_array.from_string
+
+    let content_length = bit_array.byte_size(send_body)
+    let base_req = request.to("http://localhost:4000/api/v1/vote")
+    |> result.unwrap(request.new())
+    |> request.map(bit_array.from_string)
+    
+    base_req
+    |> request.set_header("Content-Length", int.to_string(content_length))
+    |> request.set_header("authorization", user_id)
+    |> request.set_body(send_body)
+    |> request.set_method(http.Post)
+}

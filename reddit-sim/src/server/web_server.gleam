@@ -66,6 +66,12 @@ fn request_handler(
 
                     api_handlers.create_comment(req, engine_sub, self_selector)
                 }
+
+                ["vote"] -> {
+
+                    api_handlers.create_vote(req, engine_sub, self_selector)
+                }
+
                 _ -> api_handlers.error_page_not_found()
             }
         }
