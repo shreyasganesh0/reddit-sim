@@ -289,3 +289,57 @@ pub fn create_vote(resp: response.Response(BitArray), state: ReplState) -> ReplS
         }
     }
 }
+
+pub fn get_feed(resp: response.Response(BitArray), state: ReplState) -> ReplState {
+
+    echo resp
+    case json.parse_bits(resp.body, gen_decode.rest_get_feed_success_decoder()) {
+
+        Ok(gen_types.RestGetFeedSuccess(posts_list)) -> {
+
+            io.println("[CLIENT]: got feed of posts")
+            ReplState(
+                ..state,
+                subreddits: list.fold(
+                                posts_list,
+                                state.subreddits,
+                                fn(acc, a) {
+                                    [a.id, ..acc]
+                                }
+                            )
+            )
+        }
+
+        _ -> {
+
+            state
+        }
+    }
+}
+
+pub fn get_subredditfeed(resp: response.Response(BitArray), state: ReplState) -> ReplState {
+
+    echo resp
+    case json.parse_bits(resp.body, gen_decode.rest_get_subredditfeed_success_decoder()) {
+
+        Ok(gen_types.RestGetSubredditfeedSuccess(posts_list)) -> {
+
+            io.println("[CLIENT]: got subreddit feed of posts")
+            ReplState(
+                ..state,
+                subreddits: list.fold(
+                                posts_list,
+                                state.subreddits,
+                                fn(acc, a) {
+                                    [a.id, ..acc]
+                                }
+                            )
+            )
+        }
+
+        _ -> {
+
+            state
+        }
+    }
+}

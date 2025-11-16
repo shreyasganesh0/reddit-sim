@@ -1366,3 +1366,168 @@ pub fn create_vote(
     }
     |> result.unwrap(response.new(404)|>response.set_body(mist.Bytes(bytes_tree.new())))
 }
+
+pub fn get_feed(
+    req: request.Request(mist.Connection),
+    engine_pid: process.Pid,
+    self_selector: process.Selector(gen_types.UserMessage),
+    ) -> response.Response(mist.ResponseData) {
+
+    io.println("[SERVER]: recvd get feed request")
+
+    let content_type = request.get_header(req, "content-type")
+    |> result.unwrap("plain/text")
+
+    {
+    use user_id <- result.try(
+        result.map_error(
+            request.get_header(req, "authorization"),
+            fn(_) {
+
+                response.new(401)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Unauthorized"))
+                )
+            }
+        )
+    )
+
+    #("get_feed", self(), user_id, "") 
+    |> utls.send_to_pid(engine_pid, _)
+
+    use resp_ans <- result.try(
+        result.map_error(
+        process.selector_receive(self_selector, 1000),
+        fn(_) {
+
+            response.new(500)
+            |>response.set_body(
+                bytes_tree.new()
+                |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+            )
+        }
+        ))
+
+    use posts <- result.try(
+        fn() {
+        case resp_ans {
+
+            gen_types.GetFeedSuccess(posts, _) -> {Ok(posts)}
+
+            _ -> {
+                Error(
+                response.new(400)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+                )
+                )
+            }
+        }
+        }()
+    )
+
+    let post_list = json.array(posts, utls.post_jsonify)
+    Ok(
+        response.new(200)
+        |> response.set_body(
+            mist.Bytes(
+                bytes_tree.new()
+                |>bytes_tree.append(
+                    json.object(
+                    [#("posts_list", post_list)]
+                    )
+                    |>json.to_string
+                    |> bit_array.from_string
+                )
+            )
+        )
+        |> response.set_header("content-type", content_type)
+    )
+    }
+    |> result.unwrap(response.new(404)|>response.set_body(mist.Bytes(bytes_tree.new())))
+}
+
+pub fn get_subredditfeed(
+    req: request.Request(mist.Connection),
+    engine_pid: process.Pid,
+    self_selector: process.Selector(gen_types.UserMessage),
+    subreddit_id: String,
+    ) -> response.Response(mist.ResponseData) {
+
+    io.println("[SERVER]: recvd get feed request")
+
+    let content_type = request.get_header(req, "content-type")
+    |> result.unwrap("plain/text")
+
+    {
+    use user_id <- result.try(
+        result.map_error(
+            request.get_header(req, "authorization"),
+            fn(_) {
+
+                response.new(401)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Unauthorized"))
+                )
+            }
+        )
+    )
+
+    #("get_subredditfeed", self(), user_id, subreddit_id, "") 
+    |> utls.send_to_pid(engine_pid, _)
+
+    use resp_ans <- result.try(
+        result.map_error(
+        process.selector_receive(self_selector, 1000),
+        fn(_) {
+
+            response.new(500)
+            |>response.set_body(
+                bytes_tree.new()
+                |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+            )
+        }
+        ))
+
+    use posts <- result.try(
+        fn() {
+        case resp_ans {
+
+            gen_types.GetSubredditfeedSuccess(posts, _) -> {Ok(posts)}
+
+            _ -> {
+                Error(
+                response.new(400)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+                )
+                )
+            }
+        }
+        }()
+    )
+
+    let post_list = json.array(posts, utls.post_jsonify)
+    Ok(
+        response.new(200)
+        |> response.set_body(
+            mist.Bytes(
+                bytes_tree.new()
+                |>bytes_tree.append(
+                    json.object(
+                    [#("posts_list", post_list)]
+                    )
+                    |>json.to_string
+                    |> bit_array.from_string
+                )
+            )
+        )
+        |> response.set_header("content-type", content_type)
+    )
+    }
+    |> result.unwrap(response.new(404)|>response.set_body(mist.Bytes(bytes_tree.new())))
+}

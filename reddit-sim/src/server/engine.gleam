@@ -318,7 +318,46 @@ fn handle_engine(
                                             state.subreddit_rev_index,
                                             subreddit_name,
                                             subreddit_uuid,
-                                        )
+                                        ),
+                        subreddit_users_map: dict.upsert(
+                                    state.subreddit_users_map, 
+                                    subreddit_uuid,
+                                    fn(maybe_list) {
+
+                                        case maybe_list {
+
+                                            Some(uuid_list) -> {
+
+                                                [uuid, ..uuid_list]
+                                            }
+
+                                            None -> {
+
+                                                [uuid]
+                                            }
+                                        }
+                                    }
+                                  ),
+                        users_data: dict.upsert(
+                                        state.users_data,
+                                        uuid,
+                                        fn(maybe_user) {
+
+                                            case maybe_user {
+
+                                                None -> panic as "shouldnt be possible for user not to exist while creating subreddit"
+
+                                                Some(user) -> {
+
+                                                    gen_types.User(
+                                                        ..user,
+                                                        subreddits_membership_list:
+                                                        [subreddit_uuid, ..user.subreddits_membership_list]
+                                                    )
+                                                }
+                                            }
+                                        }
+                                       )
                                     )
                     utls.send_to_pid(send_pid, #("create_subreddit_success", subreddit_uuid, req_id))
                     new_state

@@ -639,6 +639,69 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                         _ -> Error(CommandError)
                     }
                 }
+
+                "get-feed" -> {
+
+                    case rest {
+
+                        [] -> {
+
+                            use user_id <- result.try(
+                                fn() {
+                                    case state.user_id == "" {
+
+                                        True -> Error(UnregisteredError)
+
+                                        False -> Ok(state.user_id)
+                                    }
+                                }()
+                            )
+                            Ok(
+                                #(
+                                request_builders.get_feed(user_id),
+                                response_handlers.get_feed,
+                                state
+                                )
+                            )
+                        }
+                        _ -> Error(CommandError)
+                    }
+                }
+
+                "get-subredditfeed" -> {
+
+                    case rest {
+
+                        ["--subreddit-name", subreddit_name] -> {
+
+                            use user_id <- result.try(
+                                fn() {
+                                    case state.user_id == "" {
+
+                                        True -> Error(UnregisteredError)
+
+                                        False -> Ok(state.user_id)
+                                    }
+                                }()
+                            )
+                            use subreddit_id <- result.try(
+                                result.map_error(
+                                    dict.get(state.subreddit_rev_index, subreddit_name),
+                                    fn(_) {SubredditUnknownError}
+                                )
+                            )
+                            Ok(
+                                #(
+                                request_builders.get_subredditfeed(subreddit_id, user_id),
+                                response_handlers.get_subredditfeed,
+                                state
+                                )
+                            )
+                        }
+                        _ -> Error(CommandError)
+                    }
+                }
+
                 _ -> Error(CommandError)
             }
         }

@@ -243,3 +243,25 @@ pub fn create_vote(parent_id: String, user_id: String, vote_t: String) {
     |> request.set_body(send_body)
     |> request.set_method(http.Post)
 }
+
+pub fn get_feed(user_id: String) {
+
+    let base_req = request.to("http://localhost:4000/api/v1/feed")
+    |> result.unwrap(request.new())
+    |> request.map(bit_array.from_string)
+    
+    base_req
+    |> request.set_header("authorization", user_id)
+    |> request.set_method(http.Get)
+}
+
+pub fn get_subredditfeed(subreddit_id: String, user_id: String) {
+
+    let base_req = request.to("http://localhost:4000/r/"<>subreddit_id<>"/api/posts")
+    |> result.unwrap(request.new())
+    |> request.map(bit_array.from_string)
+    
+    base_req
+    |> request.set_header("authorization", user_id)
+    |> request.set_method(http.Get)
+}

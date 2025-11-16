@@ -139,8 +139,27 @@ fn request_handler(
                     api_handlers.get_post(req, engine_sub, self_selector, post_id)
                 }
 
+                ["feed"] -> {
+
+                    api_handlers.get_feed(req, engine_sub, self_selector)
+                }
+
                 _ -> api_handlers.error_page_not_found()
             }
+        }
+
+        http.Get, ["r", subreddit_id, "api", ..rest] -> {
+
+            case rest {
+
+                ["posts"] -> {
+
+                    api_handlers.get_subredditfeed(req, engine_sub, self_selector, subreddit_id)
+                }
+
+                _ -> api_handlers.error_page_not_found()
+            }
+
         }
 
         _, _ -> api_handlers.error_page_not_found()
