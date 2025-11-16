@@ -95,6 +95,7 @@ fn init(
                         shutdown_count: 0,
                         num_users: num_users,
                         metrics_pid: pid,
+                        votable_user_vote_map: dict.new(),
                      )
 
     let selector = process.new_selector() 
@@ -987,19 +988,94 @@ fn handle_engine(
                                     state.users_data
                                     )
                                 )
-                use parent <- result.try(
+                use #(parent_t, parent) <- result.try(
                                     utls.check_comment_parent(
                                         commentable_id,
                                         state.posts_data,
                                         state.comments_data,
                                     )
                                 )
-                Ok(parent)
+                use user_vote_t <- result.try(
+
+                    fn() {
+
+                    let parent_id = case parent_t {
+
+                        "post" -> parent.post.id
+
+                        "comment" -> parent.comment.id
+
+                        _ -> ""
+                    }
+                    case dict.get(state.votable_user_vote_map, parent_id) {
+
+                        Ok(user_vote_map) -> {
+
+                            case dict.get(user_vote_map, uuid) {
+
+                                Ok(user_vote_t) -> {
+
+                                    case user_vote_t == vote_t {
+
+                                        True -> Error("already voted same")
+
+                                        False -> {
+
+                                            case vote_t {
+
+                                                "up" -> Ok("swap_up_to_down")
+
+                                                "down" -> Ok("swap_down_to_up")
+
+                                                "remove" -> {
+
+                                                    case user_vote_t {
+
+                                                        "up" -> Ok("up_remove")
+
+                                                        "down" -> Ok("down_remove")
+
+                                                        _ -> Error("invalid vote type")
+                                                    }
+                                                }
+                                                _ -> Error("invalid vote type")
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Error(_) -> {
+
+                                    case vote_t == "up" || vote_t == "down"{
+
+                                        True -> Ok(vote_t)
+
+                                        False -> Error("havent voted tried to unvote")
+
+                                    }
+                                }
+                            }
+                        }
+
+                        Error(_) -> {
+
+                            case vote_t == "up" || vote_t == "down"{
+
+                                True -> Ok(vote_t)
+
+                                False -> Error("havent voted tried to unvote")
+
+                            }
+                        } 
+                    }
+                    }()
+                )
+                Ok(#(parent_t, parent, user_vote_t))
             }
 
             let new_state = case res {
 
-                Ok(#(parent_t, parent)) -> {
+                Ok(#(parent_t, parent, vote_t)) -> {
 
                     let new_state = case parent_t, vote_t {
 
@@ -1025,7 +1101,12 @@ fn handle_engine(
                                                             ..user,
                                                             post_karma: user.post_karma + 1,
                                                         )
-                                                    )
+                                                    ),
+                                        votable_user_vote_map: dict.insert(
+                                                                state.votable_user_vote_map,
+                                                                commentable_id,
+                                                                dict.from_list([#(uuid, "up")])
+                                                               )
                                         )
                                 }
 
@@ -1061,7 +1142,12 @@ fn handle_engine(
                                                             ..user,
                                                             post_karma: user.post_karma - 1,
                                                         )
-                                                    )
+                                                    ),
+                                        votable_user_vote_map: dict.insert(
+                                                                state.votable_user_vote_map,
+                                                                commentable_id,
+                                                                dict.from_list([#(uuid, "down")])
+                                                               )
                                         )
                                 }
 
@@ -1075,6 +1161,221 @@ fn handle_engine(
                                 }
                             }
                         }
+
+                        "post", "down_remove" -> {
+
+                            case dict.get(state.users_data, parent.post.owner_id) {
+
+                                Ok(user) -> {
+                                    gen_types.EngineState(
+                                        ..state,
+                                        posts_data: dict.insert(
+                                                        state.posts_data,
+                                                        commentable_id,
+                                                        gen_types.Post(
+                                                            ..parent.post,
+                                                            downvotes: parent.post.downvotes - 1,
+                                                        )
+                                                    ),
+                                        users_data: dict.insert(
+                                                        state.users_data,
+                                                        user.id,
+                                                        gen_types.User(
+                                                            ..user,
+                                                            post_karma: user.post_karma + 1,
+                                                        )
+                                                    ),
+                                        votable_user_vote_map: dict.upsert(
+                                                                state.votable_user_vote_map,
+                                                                commentable_id,
+                                                                fn(maybe_dict) {
+
+                                                                    case maybe_dict {
+
+                                                                        Some(user_dict) -> {
+                                                                        dict.delete(user_dict, uuid)
+                                                                        }
+
+                                                                        None -> {
+                                                                            dict.new()
+                                                                        }
+                                                                    }
+                                                                }
+                                                               )
+                                        )
+                                }
+
+                                Error(_) -> {
+
+                                    let reason = "owner of post was invalid"
+                                    utls.send_to_pid(send_pid,
+                                        #("create_vote_failed", commentable_id, reason, req_id))
+                                    state
+
+                                }
+                            }
+                        }
+
+                        "post", "up_remove" -> {
+
+                            case dict.get(state.users_data, parent.post.owner_id) {
+
+                                Ok(user) -> {
+                                    gen_types.EngineState(
+                                        ..state,
+                                        posts_data: dict.insert(
+                                                        state.posts_data,
+                                                        commentable_id,
+                                                        gen_types.Post(
+                                                            ..parent.post,
+                                                            upvotes: parent.post.upvotes - 1,
+                                                        )
+                                                    ),
+                                        users_data: dict.insert(
+                                                        state.users_data,
+                                                        user.id,
+                                                        gen_types.User(
+                                                            ..user,
+                                                            post_karma: user.post_karma - 1,
+                                                        )
+                                                    ),
+                                        votable_user_vote_map: dict.upsert(
+                                                                state.votable_user_vote_map,
+                                                                commentable_id,
+                                                                fn(maybe_dict) {
+
+                                                                    case maybe_dict {
+
+                                                                        Some(user_dict) -> {
+                                                                        dict.delete(user_dict, uuid)
+                                                                        }
+
+                                                                        None -> {
+                                                                            dict.new()
+                                                                        }
+                                                                    }
+                                                                }
+                                                               )
+                                        )
+                                }
+
+                                Error(_) -> {
+
+                                    let reason = "owner of post was invalid"
+                                    utls.send_to_pid(send_pid,
+                                        #("create_vote_failed", commentable_id, reason, req_id))
+                                    state
+
+                                }
+                            }
+                        }
+
+                        "post", "swap_down_to_up" -> {
+
+                            case dict.get(state.users_data, parent.post.owner_id) {
+
+                                Ok(user) -> {
+                                    gen_types.EngineState(
+                                        ..state,
+                                        posts_data: dict.insert(
+                                                        state.posts_data,
+                                                        commentable_id,
+                                                        gen_types.Post(
+                                                            ..parent.post,
+                                                            downvotes: parent.post.downvotes - 1,
+                                                            upvotes: parent.post.upvotes + 1,
+                                                        )
+                                                    ),
+                                        users_data: dict.insert(
+                                                        state.users_data,
+                                                        user.id,
+                                                        gen_types.User(
+                                                            ..user,
+                                                            post_karma: user.post_karma + 2,
+                                                        )
+                                                    ),
+                                        votable_user_vote_map: dict.upsert(
+                                                                state.votable_user_vote_map,
+                                                                commentable_id,
+                                                                fn(maybe_dict) {
+
+                                                                    case maybe_dict{
+                                                                    Some(user_dict) -> {
+
+                                                                        dict.insert(user_dict, uuid, "up") 
+                                                                    }
+
+                                                                    None -> dict.from_list([#(uuid, "up")])
+                                                                    }
+                                                                }
+                                                               )
+                                        )
+                                }
+
+                                Error(_) -> {
+
+                                    let reason = "owner of post was invalid"
+                                    utls.send_to_pid(send_pid,
+                                        #("create_vote_failed", commentable_id, reason, req_id))
+                                    state
+
+                                }
+                            }
+                        }
+
+                        "post", "swap_up_to_down" -> {
+
+                            case dict.get(state.users_data, parent.post.owner_id) {
+
+                                Ok(user) -> {
+                                    gen_types.EngineState(
+                                        ..state,
+                                        posts_data: dict.insert(
+                                                        state.posts_data,
+                                                        commentable_id,
+                                                        gen_types.Post(
+                                                            ..parent.post,
+                                                            downvotes: parent.post.downvotes + 1,
+                                                            upvotes: parent.post.upvotes - 1,
+                                                        )
+                                                    ),
+                                        users_data: dict.insert(
+                                                        state.users_data,
+                                                        user.id,
+                                                        gen_types.User(
+                                                            ..user,
+                                                            post_karma: user.post_karma - 2,
+                                                        )
+                                                    ),
+                                        votable_user_vote_map: dict.upsert(
+                                                                state.votable_user_vote_map,
+                                                                commentable_id,
+                                                                fn(maybe_dict) {
+
+                                                                    case maybe_dict{
+                                                                    Some(user_dict) -> {
+
+                                                                        dict.insert(user_dict, uuid, "down") 
+                                                                    }
+
+                                                                    None -> dict.from_list([#(uuid, "down")])
+                                                                    }
+                                                                }
+                                                               )
+                                        )
+                                }
+
+                                Error(_) -> {
+
+                                    let reason = "owner of post was invalid"
+                                    utls.send_to_pid(send_pid,
+                                        #("create_vote_failed", commentable_id, reason, req_id))
+                                    state
+
+                                }
+                            }
+                        }
+
                         "comment", "up" -> {
 
                             case dict.get(state.users_data, parent.comment.owner_id) {
@@ -1097,7 +1398,12 @@ fn handle_engine(
                                                             ..user,
                                                             comment_karma: user.comment_karma + 1,
                                                         )
-                                                    )
+                                                    ),
+                                        votable_user_vote_map: dict.insert(
+                                                                state.votable_user_vote_map,
+                                                                commentable_id,
+                                                                dict.from_list([#(uuid, "up")])
+                                                               )
                                         )
                                 }
 
@@ -1133,7 +1439,216 @@ fn handle_engine(
                                                             ..user,
                                                             comment_karma: user.comment_karma - 1,
                                                         )
-                                                    )
+                                                    ),
+                                        votable_user_vote_map: dict.insert(
+                                                                state.votable_user_vote_map,
+                                                                commentable_id,
+                                                                dict.from_list([#(uuid, "down")])
+                                                               )
+                                        )
+                                }
+
+                                Error(_) -> {
+
+                                    let reason = "owner of post was invalid"
+                                    utls.send_to_pid(send_pid,
+                                        #("create_vote_failed", commentable_id, reason, req_id))
+                                    state
+
+                                }
+                            }
+                        }
+
+                        "comment", "up_remove" -> {
+
+                            case dict.get(state.users_data, parent.comment.owner_id) {
+
+                                Ok(user) -> {
+                                    gen_types.EngineState(
+                                        ..state,
+                                        comments_data: dict.insert(
+                                                        state.comments_data,
+                                                        commentable_id,
+                                                        gen_types.Comment(
+                                                            ..parent.comment,
+                                                            upvotes: parent.comment.upvotes - 1,
+                                                        )
+                                                    ),
+                                        users_data: dict.insert(
+                                                        state.users_data,
+                                                        user.id,
+                                                        gen_types.User(
+                                                            ..user,
+                                                            comment_karma: user.comment_karma - 1,
+                                                        )
+                                                    ),
+                                        votable_user_vote_map: dict.upsert(
+                                                                state.votable_user_vote_map,
+                                                                commentable_id,
+                                                                fn(maybe_dict) {
+
+                                                                    case maybe_dict{
+                                                                    Some(user_dict) -> {
+                                                                        dict.delete(user_dict, uuid)
+                                                                    }
+                                                                    None -> dict.new()
+                                                                    }
+                                                                }
+                                                               )
+                                        )
+                                }
+
+                                Error(_) -> {
+
+                                    let reason = "owner of post was invalid"
+                                    utls.send_to_pid(send_pid,
+                                        #("create_vote_failed", commentable_id, reason, req_id))
+                                    state
+
+                                }
+                            }
+                        }
+                        "comment", "down_remove" -> {
+
+                            case dict.get(state.users_data, parent.comment.owner_id) {
+
+                                Ok(user) -> {
+                                    gen_types.EngineState(
+                                        ..state,
+                                        comments_data: dict.insert(
+                                                        state.comments_data,
+                                                        commentable_id,
+                                                        gen_types.Comment(
+                                                            ..parent.comment,
+                                                            downvotes: parent.comment.downvotes - 1,
+                                                        )
+                                                    ),
+                                        users_data: dict.insert(
+                                                        state.users_data,
+                                                        user.id,
+                                                        gen_types.User(
+                                                            ..user,
+                                                            comment_karma: user.comment_karma + 1,
+                                                        )
+                                                    ),
+                                        votable_user_vote_map: dict.upsert(
+                                                                state.votable_user_vote_map,
+                                                                commentable_id,
+                                                                fn(maybe_dict) {
+
+                                                                    case maybe_dict{
+                                                                    Some(user_dict) -> {
+                                                                        dict.delete(user_dict, uuid)
+                                                                    }
+                                                                    None -> dict.new()
+                                                                    }
+                                                                }
+                                                               )
+                                        )
+                                }
+
+                                Error(_) -> {
+
+                                    let reason = "owner of post was invalid"
+                                    utls.send_to_pid(send_pid,
+                                        #("create_vote_failed", commentable_id, reason, req_id))
+                                    state
+
+                                }
+                            }
+                        }
+                        "comment", "swap_up_to_down" -> {
+
+                            case dict.get(state.users_data, parent.comment.owner_id) {
+
+                                Ok(user) -> {
+                                    gen_types.EngineState(
+                                        ..state,
+                                        comments_data: dict.insert(
+                                                        state.comments_data,
+                                                        commentable_id,
+                                                        gen_types.Comment(
+                                                            ..parent.comment,
+                                                            downvotes: parent.comment.downvotes + 1,
+                                                            upvotes: parent.comment.upvotes - 1,
+                                                        )
+                                                    ),
+                                        users_data: dict.insert(
+                                                        state.users_data,
+                                                        user.id,
+                                                        gen_types.User(
+                                                            ..user,
+                                                            comment_karma: user.comment_karma - 2,
+                                                        )
+                                                    ),
+                                        votable_user_vote_map: dict.upsert(
+                                                                state.votable_user_vote_map,
+                                                                commentable_id,
+                                                                fn(maybe_dict) {
+
+                                                                    case maybe_dict{
+                                                                    Some(user_dict) -> {
+
+                                                                        dict.insert(user_dict, uuid, "down") 
+                                                                    }
+
+                                                                    None -> dict.from_list([#(uuid, "down")])
+                                                                    }
+                                                                }
+                                                               )
+                                        )
+                                }
+
+                                Error(_) -> {
+
+                                    let reason = "owner of post was invalid"
+                                    utls.send_to_pid(send_pid,
+                                        #("create_vote_failed", commentable_id, reason, req_id))
+                                    state
+
+                                }
+                            }
+                        }
+
+                        "comment", "swap_down_to_up" -> {
+
+                            case dict.get(state.users_data, parent.comment.owner_id) {
+
+                                Ok(user) -> {
+                                    gen_types.EngineState(
+                                        ..state,
+                                        comments_data: dict.insert(
+                                                        state.comments_data,
+                                                        commentable_id,
+                                                        gen_types.Comment(
+                                                            ..parent.comment,
+                                                            downvotes: parent.comment.downvotes - 1,
+                                                            upvotes: parent.comment.upvotes + 1,
+                                                        )
+                                                    ),
+                                        users_data: dict.insert(
+                                                        state.users_data,
+                                                        user.id,
+                                                        gen_types.User(
+                                                            ..user,
+                                                            comment_karma: user.comment_karma + 2,
+                                                        )
+                                                    ),
+                                        votable_user_vote_map: dict.upsert(
+                                                                state.votable_user_vote_map,
+                                                                commentable_id,
+                                                                fn(maybe_dict) {
+
+                                                                    case maybe_dict{
+                                                                    Some(user_dict) -> {
+
+                                                                        dict.insert(user_dict, uuid, "down") 
+                                                                    }
+
+                                                                    None -> dict.from_list([#(uuid, "down")])
+                                                                    }
+                                                                }
+                                                               )
                                         )
                                 }
 
