@@ -47,6 +47,17 @@ pub fn login_user(username: String, password: String) {
     |> request.set_method(http.Post)
 }
 
+pub fn search_user(username: String, user_id: String) {
+
+    let base_req = request.to("http://localhost:4000/api/v1/search_user?q="<>username)
+    |> result.unwrap(request.new())
+    |> request.map(bit_array.from_string)
+    
+    base_req
+    |> request.set_header("authorization", user_id)
+    |> request.set_method(http.Get)
+}
+
 pub fn create_subreddit(subreddit_name: String, user_id: String) {
 
     let send_body = dict.from_list([#("subreddit_name", subreddit_name)])
@@ -264,4 +275,27 @@ pub fn get_subredditfeed(subreddit_id: String, user_id: String) {
     base_req
     |> request.set_header("authorization", user_id)
     |> request.set_method(http.Get)
+}
+
+pub fn start_directmessage(to_send_id: String, user_id: String, message: String) {
+
+    let send_body = json.object(
+        [
+        #("recipient_uuid", json.string(to_send_id)),
+        #("message", json.string(message)),
+        ]
+    )
+    |> json.to_string
+    |> bit_array.from_string
+
+    let content_length = bit_array.byte_size(send_body)
+    let base_req = request.to("http://localhost:4000/api/v1/dm/start")
+    |> result.unwrap(request.new())
+    |> request.map(bit_array.from_string)
+    
+    base_req
+    |> request.set_header("Content-Length", int.to_string(content_length))
+    |> request.set_header("authorization", user_id)
+    |> request.set_body(send_body)
+    |> request.set_method(http.Post)
 }

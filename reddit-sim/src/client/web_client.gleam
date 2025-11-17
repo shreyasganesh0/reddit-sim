@@ -26,6 +26,10 @@ type ReplError {
     SubredditUnknownError
 
     InvalidParentError
+
+    UserUnknownError
+
+    DmExistsError(dm_id: String)
 }
 
 
@@ -95,6 +99,16 @@ fn start_repl(state: response_handlers.ReplState) {
                     io.println("[CLIENT]: subreddit not found, try searching for it first")
                 }
 
+                UserUnknownError -> {
+
+                    io.println("[CLIENT]: user not found, try searching for them first")
+                }
+
+                DmExistsError(dm_id) -> {
+
+                    io.println("[CLIENT]: dm exists with id: "<>dm_id<>" use reply-dm <dm-id> to reply" )
+                }
+
                 InvalidParentError -> {
 
                     io.println("[CLIENT]: id was not a post or comment you know, try searching for it first")
@@ -153,6 +167,38 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                                 request_builders.login_user(username, password),
                                 response_handlers.login_user,
                                 state,
+                                )
+                            )
+                        }
+
+                        _ -> Error(CommandError)
+                    }
+                }
+                "search-user" -> {
+
+                    case rest {
+
+                        [username] -> {
+
+                            use user_id <- result.try(
+                                fn() {
+                                    case state.user_id == "" {
+
+                                        True -> Error(UnregisteredError)
+
+                                        False -> Ok(state.user_id)
+                                    }
+                                }()
+                            )
+                            let new_state = response_handlers.ReplState(
+                                ..state,
+                                to_update_user_name: username,
+                            )
+                            Ok(
+                                #(
+                                request_builders.search_user(username, user_id),
+                                response_handlers.search_user,
+                                new_state,
                                 )
                             )
                         }
@@ -702,6 +748,54 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                     }
                 }
 
+                "send-dm" -> {
+
+                    case rest {
+
+                        ["--to", user_name, "--message", msg] -> {
+
+                            use user_id <- result.try(
+                                fn() {
+                                    case state.user_id == "" {
+
+                                        True -> Error(UnregisteredError)
+
+                                        False -> Ok(state.user_id)
+                                    }
+                                }()
+                            )
+                            use to_send_id <- result.try(
+                                result.map_error(
+                                    dict.get(state.user_rev_index, user_name),
+                                    fn(_) {UserUnknownError}
+                                )
+                            )
+                            use _ <- result.try(
+                                    fn() {
+                                        case dict.get(state.user_dm_map, to_send_id) {
+
+                                            Ok(dm_id) -> Error(DmExistsError(dm_id))
+
+                                            Error(_) -> Ok(Nil) 
+                                        }
+                                    }()
+                                )
+                            let new_state = response_handlers.ReplState(
+                                ..state,
+                                to_update_user_dm: user_name,
+                            )
+                            Ok(
+                                #(
+                                request_builders.start_directmessage(to_send_id, user_id, msg),
+                                response_handlers.start_directmessage,
+                                new_state
+                                )
+                            )
+                        }
+                        _ -> Error(CommandError)
+                    }
+                }
+
                 _ -> Error(CommandError)
             }
         }
@@ -719,7 +813,12 @@ pub fn main() {
                         to_update_subreddit_name: "",
                         subreddit_rev_index: dict.new(),
                         posts: [],
-                        comments: []
+                        comments: [],
+                        users: [],
+                        to_update_user_name: "",
+                        user_rev_index: dict.new(),
+                        user_dm_map: dict.new(),
+                        to_update_user_dm: "",
                     )
     start_repl(init_state)
 }

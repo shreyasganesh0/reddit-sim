@@ -72,6 +72,11 @@ fn request_handler(
                     api_handlers.create_vote(req, engine_sub, self_selector)
                 }
 
+                ["dm", "start"] -> {
+
+                    api_handlers.start_directmessage(req, engine_sub, self_selector)
+                }
+
                 _ -> api_handlers.error_page_not_found()
             }
         }

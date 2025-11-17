@@ -15,7 +15,12 @@ pub type ReplState {
         to_update_subreddit_name: String,
         subreddit_rev_index: Dict(String, String),
         posts: List(String),
-        comments: List(String)
+        comments: List(String),
+        users: List(String),
+        to_update_user_name: String,
+        user_rev_index: Dict(String, String),
+        user_dm_map: Dict(String, String),
+        to_update_user_dm: String,
     )
 }
 
@@ -117,6 +122,33 @@ pub fn leave_subreddit(resp: response.Response(BitArray), state: ReplState) -> R
 
             io.println("[CLIENT]: left subreddit with id "<>subreddit_id)
             state
+        }
+
+        _ -> {
+
+            state
+        }
+    }
+    
+}
+
+pub fn search_user(resp: response.Response(BitArray), state: ReplState) -> ReplState {
+
+    case json.parse_bits(resp.body, gen_decode.rest_search_user_success_decoder()) {
+
+        Ok(gen_types.RestSearchUserSuccess(user_id)) -> {
+
+            io.println("[CLIENT]: found user with id "<>user_id)
+            ReplState(
+                ..state,
+                users: [user_id, ..state.users],
+                user_rev_index: dict.insert(
+                    state.user_rev_index,
+                    state.to_update_user_name,
+                    user_id
+                ),
+                to_update_user_name: "",
+            )
         }
 
         _ -> {
@@ -334,6 +366,32 @@ pub fn get_subredditfeed(resp: response.Response(BitArray), state: ReplState) ->
                                     [a.id, ..acc]
                                 }
                             )
+            )
+        }
+
+        _ -> {
+
+            state
+        }
+    }
+}
+
+pub fn start_directmessage(resp: response.Response(BitArray), state: ReplState) -> ReplState {
+
+    echo resp
+    case json.parse_bits(resp.body, gen_decode.rest_start_directmessage_success_decoder()) {
+
+        Ok(gen_types.RestStartDirectmessageSuccess(dm_id)) -> {
+
+            io.println("[CLIENT]: started dm with dm id: "<> dm_id)
+            ReplState(
+                ..state,
+                user_dm_map: dict.insert(
+                    state.user_dm_map,
+                    state.to_update_user_dm,
+                    dm_id
+                ),
+                to_update_user_dm: ""
             )
         }
 

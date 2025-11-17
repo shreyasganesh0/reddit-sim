@@ -469,7 +469,7 @@ pub fn search_user(
                 bytes_tree.new()
                 |>bytes_tree.append(
                     json.object(
-                    [#("user_id", json.string(resp_user_id))]
+                    [#("search_id", json.string(resp_user_id))]
                     )
                     |>json.to_string
                     |> bit_array.from_string
@@ -1520,6 +1520,113 @@ pub fn get_subredditfeed(
                 |>bytes_tree.append(
                     json.object(
                     [#("posts_list", post_list)]
+                    )
+                    |>json.to_string
+                    |> bit_array.from_string
+                )
+            )
+        )
+        |> response.set_header("content-type", content_type)
+    )
+    }
+    |> result.unwrap(response.new(404)|>response.set_body(mist.Bytes(bytes_tree.new())))
+}
+
+pub fn start_directmessage(
+    req: request.Request(mist.Connection),
+    engine_pid: process.Pid,
+    self_selector: process.Selector(gen_types.UserMessage),
+    ) -> response.Response(mist.ResponseData) {
+
+    io.println("[SERVER]: recvd start dm request")
+
+    let content_type = request.get_header(req, "content-type")
+    |> result.unwrap("plain/text")
+
+    {
+    use req_bytes <- result.try(
+        result.map_error(
+        mist.read_body(req, 8 * 1024 * 1024 * 1024), 
+        fn (_) {
+
+                response.new(400)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+            )
+        }))
+    echo req_bytes
+    use req_parsed <- result.try(
+                result.map_error(
+                req_bytes.body |> json.parse_bits(gen_decode.rest_start_directmessage_decoder()),
+                fn(_) {
+
+                    response.new(400)
+                    |>response.set_body(
+                        bytes_tree.new()
+                        |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+                    )
+                }))
+    echo req_parsed
+    use user_id <- result.try(
+        result.map_error(
+            request.get_header(req, "authorization"),
+            fn(_) {
+
+                response.new(401)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Unauthorized"))
+                )
+            }
+        )
+    )
+
+    let assert gen_types.RestStartDirectmessage(send_user_id, message) = req_parsed
+    #("start_directmessage", self(), user_id, send_user_id, message, "") 
+    |> utls.send_to_pid(engine_pid, _)
+
+    use resp_ans <- result.try(
+        result.map_error(
+        process.selector_receive(self_selector, 1000),
+        fn(_) {
+
+            response.new(500)
+            |>response.set_body(
+                bytes_tree.new()
+                |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+            )
+        }
+        ))
+    echo resp_ans
+
+    use resp_dm_id <- result.try(
+        fn() {
+        case resp_ans {
+
+            gen_types.StartDirectmessageSuccess(dm_id, _) -> {Ok(dm_id)}
+
+            _ -> {
+                Error(
+                response.new(400)
+                |>response.set_body(
+                    bytes_tree.new()
+                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
+                )
+                )
+            }
+        }
+        }()
+    )
+
+    Ok(
+        response.new(200)
+        |> response.set_body(
+            mist.Bytes(
+                bytes_tree.new()
+                |>bytes_tree.append(
+                    json.object(
+                    [#("dm_id", json.string(resp_dm_id))]
                     )
                     |>json.to_string
                     |> bit_array.from_string

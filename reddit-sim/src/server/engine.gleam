@@ -1863,6 +1863,7 @@ fn handle_engine(
 
         gen_types.StartDirectmessage(send_pid, uuid, to_uuid, message, req_id) -> {
 
+            io.println("[ENGINE]: recvd start dm msg username: " <> uuid)
             let res = {
                 use from_user <- result.try(
                                     utls.validate_request(
@@ -1911,14 +1912,7 @@ fn handle_engine(
                                                         )
                                                     )
                                     )
-                    case dict.get(state.user_pid_map, to_user.id) {
-
-                        Ok(to_pid) -> {
-                            utls.send_to_pid(to_pid, #("start_directmessage_success", dm_id, req_id))
-                            Nil
-                        }
-                        Error(_) -> Nil
-                    }
+                    utls.send_to_pid(send_pid, #("start_directmessage_success", dm_id, req_id))
                     new_state
 
                 }
