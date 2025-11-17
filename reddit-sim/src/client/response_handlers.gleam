@@ -401,3 +401,83 @@ pub fn start_directmessage(resp: response.Response(BitArray), state: ReplState) 
         }
     }
 }
+
+pub fn reply_directmessage(resp: response.Response(BitArray), state: ReplState) -> ReplState {
+
+    echo resp
+    case json.parse_bits(resp.body, gen_decode.rest_reply_directmessage_success_decoder()) {
+
+        Ok(gen_types.RestReplyDirectmessageSuccess(dm_id)) -> {
+
+            io.println("[CLIENT]: reply dm with dm id: "<> dm_id)
+            state
+        }
+
+        _ -> {
+
+            state
+        }
+    }
+}
+
+pub fn get_directmessages(resp: response.Response(BitArray), state: ReplState) -> ReplState {
+
+    echo resp
+    case json.parse_bits(resp.body, gen_decode.rest_get_directmessages_success_decoder()) {
+
+        Ok(gen_types.RestGetDirectmessagesSuccess(dms)) -> {
+
+            echo dms
+
+            io.println("[CLIENT]: got dms")
+            let new_state = ReplState(
+                ..state,
+                user_dm_map: list.fold(
+                    dms, 
+                    state.user_dm_map,
+                    fn(user_dict, dm) {
+                        list.fold(
+                            dm.participants,
+                            user_dict, 
+                            fn(acc, user_id) {
+                                case user_id != state.user_id {
+
+                                    True -> dict.insert(acc, user_id, dm.id)
+
+                                    False -> acc
+                                }
+                            }
+                        )
+                    }
+                ),
+                user_rev_index: list.fold(
+                    dms,
+                    state.user_rev_index,
+                    fn(user_rev_idx, dm) {
+
+                        list.zip(dm.usernames, dm.participants)
+                        |> list.fold(
+                            user_rev_idx, 
+                            fn(acc, user) {
+                                let #(curr_name, curr_id) = user
+                                case curr_id != state.user_id {
+
+                                    True -> dict.insert(acc, curr_name, curr_id)
+
+                                    False -> acc
+                                }
+                            }
+                        )
+                    }
+                )
+            )
+
+            new_state
+        }
+
+        _ -> {
+
+            state
+        }
+    }
+}

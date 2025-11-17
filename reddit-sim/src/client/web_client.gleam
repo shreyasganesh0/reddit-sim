@@ -30,6 +30,8 @@ type ReplError {
     UserUnknownError
 
     DmExistsError(dm_id: String)
+
+    DmNotExistsError
 }
 
 
@@ -106,7 +108,12 @@ fn start_repl(state: response_handlers.ReplState) {
 
                 DmExistsError(dm_id) -> {
 
-                    io.println("[CLIENT]: dm exists with id: "<>dm_id<>" use reply-dm <dm-id> to reply" )
+                    io.println("[CLIENT]: dm exists with id: "<>dm_id<>" use reply-dm instead" )
+                }
+
+                DmNotExistsError -> {
+
+                    io.println("[CLIENT]: dm does not exist use send-dm to start a new dm" )
                 }
 
                 InvalidParentError -> {
@@ -782,7 +789,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                                 )
                             let new_state = response_handlers.ReplState(
                                 ..state,
-                                to_update_user_dm: user_name,
+                                to_update_user_dm: to_send_id,
                             )
                             Ok(
                                 #(
@@ -796,6 +803,66 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                     }
                 }
 
+                "reply-dm" -> {
+
+                    case rest {
+
+                        ["--to", user_name, "--message", msg] -> {
+
+                            use user_id <- result.try(
+                                fn() {
+                                    case state.user_id == "" {
+
+                                        True -> Error(UnregisteredError)
+
+                                        False -> Ok(state.user_id)
+                                    }
+                                }()
+                            )
+                            use to_send_id <- result.try(
+                                result.map_error(
+                                    dict.get(state.user_rev_index, user_name),
+                                    fn(_) {UserUnknownError}
+                                )
+                            )
+                            use dm_id <- result.try(
+                                    result.map_error(
+                                        dict.get(state.user_dm_map, to_send_id),
+                                        fn(_) {DmNotExistsError}
+                                    )
+                                )
+                            Ok(
+                                #(
+                                request_builders.reply_directmessage(dm_id, user_id, msg),
+                                response_handlers.reply_directmessage,
+                                state
+                                )
+                            )
+                        }
+                        _ -> Error(CommandError)
+                    }
+                }
+
+                "get-dms" -> {
+
+                    use user_id <- result.try(
+                        fn() {
+                            case state.user_id == "" {
+
+                                True -> Error(UnregisteredError)
+
+                                False -> Ok(state.user_id)
+                            }
+                        }()
+                    )
+                    Ok(
+                        #(
+                        request_builders.get_directmessages(user_id),
+                        response_handlers.get_directmessages,
+                        state
+                        )
+                    )
+                }
                 _ -> Error(CommandError)
             }
         }

@@ -160,3 +160,14 @@ pub fn comment_jsonify(comment: gen_types.Comment) {
         ]
         |> json.object
 }
+
+pub fn dms_jsonify(dm: gen_types.Dm) {
+
+        [
+        #("id", json.string(dm.id)),
+        #("msgs_list", json.array(dm.msgs_list, json.string)),
+        #("participants", json.array(dm.participants, json.string)),
+        #("usernames", json.array(dm.usernames, json.string))
+        ]
+        |> json.object
+}

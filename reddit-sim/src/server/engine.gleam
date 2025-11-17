@@ -1891,6 +1891,7 @@ fn handle_engine(
                                 id: dm_id,
                                 msgs_list: [from_user.username<>": "<>message],
                                 participants: [to_user.id, from_user.id],
+                                usernames: [to_user.username, from_user.username]
                              )
 
                     let new_state = gen_types.EngineState(

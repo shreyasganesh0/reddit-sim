@@ -46,7 +46,6 @@ fn request_handler(
                     api_handlers.register_user(req, engine_sub, self_selector)
                 }
 
-
                 ["login"] -> {
 
                     api_handlers.login_user(req, engine_sub, self_selector)
@@ -72,9 +71,15 @@ fn request_handler(
                     api_handlers.create_vote(req, engine_sub, self_selector)
                 }
 
-                ["dm", "start"] -> {
+                ["dm", ..typ] -> {
 
-                    api_handlers.start_directmessage(req, engine_sub, self_selector)
+                    case typ {
+
+                        ["start"] -> api_handlers.start_directmessage(req, engine_sub, self_selector)
+
+                        [_dm_id, "reply"] -> api_handlers.reply_directmessage(req, engine_sub, self_selector)
+                        _ -> api_handlers.error_page_not_found()
+                    }
                 }
 
                 _ -> api_handlers.error_page_not_found()
@@ -147,6 +152,11 @@ fn request_handler(
                 ["feed"] -> {
 
                     api_handlers.get_feed(req, engine_sub, self_selector)
+                }
+
+                ["dm"] -> {
+
+                    api_handlers.get_directmessages(req, engine_sub, self_selector)
                 }
 
                 _ -> api_handlers.error_page_not_found()
