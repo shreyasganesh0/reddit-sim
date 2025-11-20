@@ -84,9 +84,9 @@ pub fn register_user(
                     )
                 }))
 
-    let assert gen_types.RestRegisterUser(username, password) = req_parsed
+    let assert gen_types.RestRegisterUser(username, password, pub_key,) = req_parsed
 
-    #("register_user", self(), username, password, "") 
+    #("register_user", self(), username, password, pub_key, "") 
     |> utls.send_to_pid(engine_pid, _)
 
     use resp_ans <- result.try(
@@ -444,11 +444,11 @@ pub fn search_user(
         }
         ))
 
-    use resp_user_id <- result.try(
+    use #(resp_user_id, pub_key) <- result.try(
         fn() {
         case resp_ans {
 
-            gen_types.SearchUserSuccess(user_id, _) -> {Ok(user_id)}
+            gen_types.SearchUserSuccess(user_id, pub_key, _) -> {Ok(#(user_id, pub_key))}
 
             _ -> {
                 Error(
@@ -469,7 +469,10 @@ pub fn search_user(
                 bytes_tree.new()
                 |>bytes_tree.append(
                     json.object(
-                    [#("search_id", json.string(resp_user_id))]
+                    [
+                    #("search_id", json.string(resp_user_id)),
+                    #("pub_key", json.string(pub_key))
+                    ]
                     )
                     |>json.to_string
                     |> bit_array.from_string
@@ -931,9 +934,9 @@ pub fn create_repost(
     )
 
 
-    let assert gen_types.RestCreateRepost(post_id) = req_parsed
+    let assert gen_types.RestCreateRepost(post_id, sig_str) = req_parsed
 
-    #("create_repost", self(), user_id, post_id, "") 
+    #("create_repost", self(), user_id, post_id, sig_str, "") 
     |> utls.send_to_pid(engine_pid, _)
 
     use resp_ans <- result.try(

@@ -19,6 +19,8 @@ import generated/generated_types as gen_types
 import generated/generated_selectors as gen_select
 import generated/generated_decoders as gen_decode
 
+import rsa_keys
+
 import metrics/user_metrics
 import utls
 //import client/injector
@@ -284,6 +286,9 @@ fn init(
                             sub_count: 0,
                             role: role,
                             pending_reqs: dict.new(),
+                            priv_key: "",
+                            pub_key: "",
+                            pub_key_map: dict.new(),
                          )
 
 
@@ -645,11 +650,14 @@ fn handle_user(
 
             let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
 
+            let #(priv_key, pub_key) = rsa_keys.generate_rsa_keys()
             let new_state = gen_types.UserState(
                 ..state,
                 pending_reqs: new_pending,
+                priv_key: priv_key.pem,
+                pub_key: pub_key.pem,
             )
-            utls.send_to_engine(#("register_user", self(), state.user_name, "test_pwd", req_id))
+            utls.send_to_engine(#("register_user", self(), state.user_name, "test_pwd", pub_key.pem, req_id))
 
             actor.continue(new_state)
 
@@ -966,6 +974,7 @@ fn handle_user(
                         subreddit_id: subreddit_id,
                         upvotes: 0,
                         downvotes: 0,
+                        signature: ""
                        )
             |> gen_decode.post_serializer
             io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting create post")
@@ -1452,7 +1461,7 @@ fn handle_user(
             actor.continue(state)
         }
         
-        gen_types.SearchUserSuccess(user_id, req_id) -> {
+        gen_types.SearchUserSuccess(user_id, pub_key, req_id) -> {
 
             io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully found user" <> user_id)
 
@@ -1462,7 +1471,8 @@ fn handle_user(
             let new_state = gen_types.UserState(
                                 ..state,
                                 pending_reqs: new_pending,
-                                users: [user_id, ..state.users]
+                                users: [user_id, ..state.users],
+                                pub_key_map: dict.insert(state.pub_key_map, user_id, pub_key)
                             )
             actor.continue(new_state)
         }

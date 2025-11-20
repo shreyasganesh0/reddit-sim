@@ -11,9 +11,15 @@ import generated/generated_types as gen_types
 
 import utls
 
-pub fn register_user(username: String, password: String) {
+pub fn register_user(username: String, password: String, pub_key: String) {
 
-    let send_body = dict.from_list([#("username", username), #("password", password)])
+    let send_body = dict.from_list(
+        [
+        #("username", username),
+        #("password", password),
+        #("pub_key", pub_key)
+        ]
+    )
     |> json.dict(function.identity, json.string)
     |> json.to_string
     |> bit_array.from_string
@@ -127,43 +133,31 @@ pub fn search_subreddit(subreddit_name: String, user_id: String) {
 }
 
 pub fn create_post(
-    subreddit_name: String,
-    subreddit_id: String,
-    user_id: String,
-    title: String,
-    body: String) {
+    post: gen_types.Post,
+    ) {
 
-    let post_body =
-        gen_types.Post(
-        id: "",
-        title: title,
-        body: body,
-        owner_id: "",
-        subreddit_id: subreddit_id,
-        upvotes: 0,
-        downvotes: 0
-    )
+    let post_body = post
     |> utls.post_jsonify
 
-    let send_body = json.object([#("subreddit_id", json.string(subreddit_id)), #("post", post_body)])
+    let send_body = json.object([#("subreddit_id", json.string(post.subreddit_id)), #("post", post_body)])
     |> json.to_string
     |> bit_array.from_string
 
     let content_length = bit_array.byte_size(send_body)
-    let base_req = request.to("http://localhost:4000/r/"<>subreddit_name<>"/api/submit")
+    let base_req = request.to("http://localhost:4000/r/"<>post.subreddit_id<>"/api/submit")
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
     base_req
     |> request.set_header("Content-Length", int.to_string(content_length))
-    |> request.set_header("authorization", user_id)
+    |> request.set_header("authorization", post.owner_id)
     |> request.set_body(send_body)
     |> request.set_method(http.Post)
 }
 
-pub fn create_repost(post_id: String, user_id: String) {
+pub fn create_repost(post_id: String, user_id: String, sig: String) {
 
-    let send_body = dict.from_list([#("post_id", post_id)])
+    let send_body = dict.from_list([#("post_id", post_id), #("signature", sig)])
     |> json.dict(function.identity, json.string)
     |> json.to_string
     |> bit_array.from_string

@@ -5,6 +5,9 @@ import gleam/result
 import gleam/dict.{type Dict}
 import gleam/erlang/atom
 import gleam/json
+import gleam/bit_array
+
+import rsa_keys
 
 import generated/generated_types as gen_types
 
@@ -89,6 +92,7 @@ pub fn check_comment_parent(
                 upvotes: 0,
                 downvotes: 0,
                 subreddit_id: "",
+                signature: ""
                )
                 
     let def_comment = gen_types.Comment(
@@ -144,6 +148,7 @@ pub fn post_jsonify(post: gen_types.Post) {
         #("upvotes", json.int(post.upvotes)),
         #("downvotes", json.int(post.downvotes)),
         #("subreddit_id", json.string(post.subreddit_id)),
+        #("signature", json.string(post.signature)),
         ]
     |> json.object
 }
@@ -170,4 +175,13 @@ pub fn dms_jsonify(dm: gen_types.Dm) {
         #("usernames", json.array(dm.usernames, json.string))
         ]
         |> json.object
+}
+
+pub fn get_post_sig(post: gen_types.Post, priv_key: String) {
+
+    let post_format = "id:"<>post.id<>"\ntitle:"<>post.title<>"\nbody:"<>post.body<>"\nowner_id:"<>post.owner_id<>"\nsubreddit_id:"<>post.subreddit_id
+
+    post_format
+    |> bit_array.from_string
+    |> rsa_keys.sign_message_with_pem_string(priv_key)
 }

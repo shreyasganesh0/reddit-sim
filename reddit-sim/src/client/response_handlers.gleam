@@ -21,6 +21,10 @@ pub type ReplState {
         user_rev_index: Dict(String, String),
         user_dm_map: Dict(String, String),
         to_update_user_dm: String,
+        priv_key: String,
+        pub_key: String,
+        pub_key_map: Dict(String, String),
+        posts_data: Dict(String, gen_types.Post)
     )
 }
 
@@ -136,7 +140,7 @@ pub fn search_user(resp: response.Response(BitArray), state: ReplState) -> ReplS
 
     case json.parse_bits(resp.body, gen_decode.rest_search_user_success_decoder()) {
 
-        Ok(gen_types.RestSearchUserSuccess(user_id)) -> {
+        Ok(gen_types.RestSearchUserSuccess(user_id, pub_key)) -> {
 
             io.println("[CLIENT]: found user with id "<>user_id)
             ReplState(
@@ -146,6 +150,11 @@ pub fn search_user(resp: response.Response(BitArray), state: ReplState) -> ReplS
                     state.user_rev_index,
                     state.to_update_user_name,
                     user_id
+                ),
+                pub_key_map: dict.insert(
+                    state.pub_key_map,
+                    user_id,
+                    pub_key,
                 ),
                 to_update_user_name: "",
             )

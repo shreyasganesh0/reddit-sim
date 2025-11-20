@@ -9,6 +9,11 @@ import gleam/list
 import gleam/http/request
 import gleam/http/response
 import gleam/httpc
+import rsa_keys
+
+import utls
+
+import generated/generated_types as gen_types
 
 import client/response_handlers
 import client/request_builders
@@ -32,6 +37,10 @@ type ReplError {
     DmExistsError(dm_id: String)
 
     DmNotExistsError
+
+    SignPostFailedError(err: String)
+    
+    PostDoesntExistError
 }
 
 
@@ -120,6 +129,16 @@ fn start_repl(state: response_handlers.ReplState) {
 
                     io.println("[CLIENT]: id was not a post or comment you know, try searching for it first")
                 }
+
+                SignPostFailedError(err) -> {
+
+                    io.println("[CLIENT]: failed to create a valid signature for post: "<>err)
+                }
+                
+                PostDoesntExistError -> {
+
+                    io.println("[CLIENT]: trying to repost invaild post id")
+                }
             }
 
             state
@@ -150,11 +169,17 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
 
                         [username, password] -> {
 
+                            let #(priv_key, pub_key) = rsa_keys.generate_rsa_keys()
+                            let new_state = response_handlers.ReplState(
+                                ..state,
+                                priv_key: priv_key.pem,
+                                pub_key: pub_key.pem
+                            )
                             Ok(
                                 #(
-                                request_builders.register_user(username, password),
+                                request_builders.register_user(username, password, pub_key.pem),
                                 response_handlers.register_user,
-                                state,
+                                new_state,
                                 )
                             )
                         }
@@ -181,6 +206,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                         _ -> Error(CommandError)
                     }
                 }
+
                 "search-user" -> {
 
                     case rest {
@@ -389,9 +415,40 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                                 }()
                             )
 
+                            use post <- result.try(
+                                fn() {
+
+                                    let post = gen_types.Post(
+                                        id: "",
+                                        title: title,
+                                        body: body,
+                                        owner_id: user_id,
+                                        subreddit_id: subreddit_id,
+                                        upvotes: 0,
+                                        downvotes: 0,
+                                        signature: "",
+                                    )
+                                    case utls.get_post_sig(post, state.priv_key) {
+
+                                        Ok(sig) -> {
+
+                                            Ok(gen_types.Post(
+                                                ..post,
+                                                signature: sig|>bit_array.base16_encode,
+                                            ))
+                                        }
+
+                                        Error(err) -> {
+
+                                            Error(SignPostFailedError(err))
+                                        }
+                                    }
+                                }()
+                            )
+
                             Ok(
                                 #(
-                                request_builders.create_post(subreddit_name, subreddit_id, user_id, title, body),
+                                request_builders.create_post(post),
                                 response_handlers.create_post,
                                 state
                                 )
@@ -418,10 +475,23 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                                     }
                                 }()
                             )
-
+                            use post <- result.try(
+                                result.map_error(
+                                    dict.get(state.posts_data, post_id),
+                                    fn(_) {PostDoesntExistError}
+                                )
+                            )
+                            use sig <- result.try(
+                                result.map_error(
+                                    utls.get_post_sig(post, state.priv_key),
+                                    fn(err) {SignPostFailedError(err)}
+                                )
+                            )
                             Ok(
                                 #(
-                                request_builders.create_repost(post_id, user_id),
+                                request_builders.create_repost(
+                                    post_id, user_id, sig|>bit_array.base16_encode
+                                ),
                                 response_handlers.create_repost,
                                 state
                                 )
@@ -886,6 +956,10 @@ pub fn main() {
                         user_rev_index: dict.new(),
                         user_dm_map: dict.new(),
                         to_update_user_dm: "",
+                        priv_key: "",
+                        pub_key: "",
+                        pub_key_map: dict.new(),
+                        posts_data: dict.new()
                     )
     start_repl(init_state)
 }

@@ -171,9 +171,9 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.RegisterUser(send_pid, username, password, req_id) -> {
+        gen_types.RegisterUser(send_pid, username, password, pub_key, req_id) -> {
 
-            io.println("[ENGINE]: recvd register user msg username: " <> username <> " password: "<> password)
+            io.println("[ENGINE]: recvd register user msg username: " <> username <> " password: "<> password<>" pub_key: "<>pub_key)
 
             case dict.has_key(state.user_rev_index, username) {
 
@@ -205,6 +205,7 @@ fn handle_engine(
                                                         post_karma: 0,
                                                         comment_karma: 0,
                                                         dms_list: [],
+                                                        pub_key: pub_key
                                                     ),
                                                  ),
                                         user_pid_map: dict.insert(
@@ -667,7 +668,7 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.CreateRepost(send_pid, uuid, post_id, req_id) -> {
+        gen_types.CreateRepost(send_pid, uuid, post_id, signature, req_id) -> {
 
             let res = {
                 use user <- result.try(
@@ -695,7 +696,8 @@ fn handle_engine(
                     let post_data = gen_types.Post(
                                     ..post_data,
                                     owner_id: user.id,
-                                    id: post_uuid
+                                    id: post_uuid,
+                                    signature: signature
                                   )
 
                     case dict.get(state.subreddits_data, post_data.subreddit_id) {
@@ -1844,7 +1846,22 @@ fn handle_engine(
             let new_state = case res {
 
                 Ok(search_id) -> {
-                    utls.send_to_pid(send_pid, #("search_user_success", search_id, req_id))
+
+                    case dict.get(state.users_data, search_id) {
+
+                        Ok(gen_types.User(pub_key, ..)) -> {
+                            utls.send_to_pid(
+                                send_pid, #("search_user_success", search_id, pub_key, req_id)
+                            )
+                        }
+
+                        Error(_) -> {
+                            let reason = "user doesnt exist"
+                            utls.send_to_pid(
+                                send_pid, #("search_user_failed", search_user, reason, req_id)
+                            )
+                        }
+                    }
                     state
 
                 }
