@@ -54,7 +54,6 @@ pub fn register_user(
     engine_pid: process.Pid,
     self_selector: process.Selector(gen_types.UserMessage)
     ) -> response.Response(mist.ResponseData) {
-
     io.println("[SERVER]: recvd register request")
 
     let content_type = request.get_header(req, "content-type")
@@ -63,7 +62,7 @@ pub fn register_user(
     {
     use req_bytes <- result.try(
         result.map_error(
-        mist.read_body(req, 1024), 
+        mist.read_body(req, 8 * 1024 * 1024), 
         fn (_) {
 
             response.new(400)
@@ -84,7 +83,7 @@ pub fn register_user(
                     )
                 }))
 
-    let assert gen_types.RestRegisterUser(username, password, pub_key,) = req_parsed
+    let assert gen_types.RestRegisterUser(username, password, pub_key) = req_parsed
 
     #("register_user", self(), username, password, pub_key, "") 
     |> utls.send_to_pid(engine_pid, _)
@@ -175,9 +174,9 @@ pub fn login_user(
                     )
                 }))
 
-    let assert gen_types.RestLoginUser(username, password) = req_parsed
+    let assert gen_types.RestLoginUser(username, password, pub_key) = req_parsed
 
-    #("login_user", self(), username, password, "") 
+    #("login_user", self(), username, password, pub_key, "") 
     |> utls.send_to_pid(engine_pid, _)
 
     use resp_ans <- result.try(

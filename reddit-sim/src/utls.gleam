@@ -92,7 +92,8 @@ pub fn check_comment_parent(
                 upvotes: 0,
                 downvotes: 0,
                 subreddit_id: "",
-                signature: ""
+                signature: "",
+                owner_name: ""
                )
                 
     let def_comment = gen_types.Comment(
@@ -149,6 +150,7 @@ pub fn post_jsonify(post: gen_types.Post) {
         #("downvotes", json.int(post.downvotes)),
         #("subreddit_id", json.string(post.subreddit_id)),
         #("signature", json.string(post.signature)),
+        #("owner_name", json.string(post.owner_name)),
         ]
     |> json.object
 }
@@ -177,11 +179,14 @@ pub fn dms_jsonify(dm: gen_types.Dm) {
         |> json.object
 }
 
+pub fn get_post_ser(post: gen_types.Post) {
+
+    let post_body = "title:"<>post.title<>"\nbody:"<>post.body<>"\nowner_id:"<>post.owner_id<>"\nsubreddit_id:"<>post.subreddit_id
+    bit_array.from_string(post_body)
+}
+
 pub fn get_post_sig(post: gen_types.Post, priv_key: String) {
 
-    let post_format = "id:"<>post.id<>"\ntitle:"<>post.title<>"\nbody:"<>post.body<>"\nowner_id:"<>post.owner_id<>"\nsubreddit_id:"<>post.subreddit_id
-
-    post_format
-    |> bit_array.from_string
+    get_post_ser(post)
     |> rsa_keys.sign_message_with_pem_string(priv_key)
 }

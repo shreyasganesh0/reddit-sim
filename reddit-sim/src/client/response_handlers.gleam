@@ -3,6 +3,11 @@ import gleam/http/response
 import gleam/json
 import gleam/dict.{type Dict}
 import gleam/list
+import gleam/result
+import gleam/bit_array
+
+import rsa_keys
+import utls
 
 import generated/generated_decoders as gen_decode
 import generated/generated_types as gen_types
@@ -11,6 +16,7 @@ pub type ReplState {
 
     ReplState(
         user_id: String,
+        user_name: String,
         subreddits: List(String),
         to_update_subreddit_name: String,
         subreddit_rev_index: Dict(String, String),
@@ -142,7 +148,7 @@ pub fn search_user(resp: response.Response(BitArray), state: ReplState) -> ReplS
 
         Ok(gen_types.RestSearchUserSuccess(user_id, pub_key)) -> {
 
-            io.println("[CLIENT]: found user with id "<>user_id)
+            io.println("[CLIENT]: found user with id "<>user_id<>" pub_key: " <> pub_key)
             ReplState(
                 ..state,
                 users: [user_id, ..state.users],
@@ -275,13 +281,50 @@ pub fn get_post(resp: response.Response(BitArray), state: ReplState) -> ReplStat
 
         Ok(gen_types.RestGetPostSuccess(post, comments)) -> {
 
-            io.println("[CLIENT]: created repost with id "<>post.id)
-            echo post
-            echo comments
-            ReplState(
-                ..state,
-                posts: [post.id, ..state.posts]
-            )
+            case verify_post(post, state) {
+
+                Ok(_) -> {
+
+                    io.println("[CLIENT]: got post with id "<>post.id)
+                    display_post(post, comments)
+                    ReplState(
+                        ..state,
+                        posts_data: dict.insert(state.posts_data, post.id, post)
+                    )
+                }
+
+                Error(err) -> {
+
+                    case err {
+                        SignatureDecodeFail -> {
+
+                            io.println(
+                                "[CLIENT]: couldnt decode signature from post with owner: "
+                                <>post.owner_name
+                            )
+
+                        }
+
+                        PubkeyNotExists -> {
+
+                    io.println("[CLIENT]: couldnt find pub key for user: "<>post.owner_name<>" try searching for them using search-user <username>")
+                        }
+
+                        VerifyRuntimeError(err) -> {
+
+                    io.println("[CLIENT]: invalid public key format: "<> err <>"try searching for them using search-user: "<>post.owner_name)
+                        }
+
+                        UnalbetoVerifySignature -> {
+
+                    io.println("[CLIENT]: couldnt verify post with owners pub key: "<>post.owner_name)
+                        }
+                    }
+                    io.println("[CLIENT]: couldnt verify post owner")
+                    state
+                }
+            }
+
         }
 
         _ -> {
@@ -339,15 +382,59 @@ pub fn get_feed(resp: response.Response(BitArray), state: ReplState) -> ReplStat
         Ok(gen_types.RestGetFeedSuccess(posts_list)) -> {
 
             io.println("[CLIENT]: got feed of posts")
-            ReplState(
-                ..state,
-                subreddits: list.fold(
-                                posts_list,
-                                state.subreddits,
-                                fn(acc, a) {
-                                    [a.id, ..acc]
-                                }
+            list.fold(
+                posts_list,
+                state,
+                fn(state, post) {
+
+                    case verify_post(post, state) {
+
+                        Ok(_) -> {
+
+                            display_post(post, [])
+                            ReplState(
+                                ..state,
+                                subreddits: [post.subreddit_id, ..state.subreddits],
+                                posts_data: dict.insert(
+                                                state.posts_data,
+                                                post.id,
+                                                post
+                                            )
                             )
+                        }
+
+                        Error(err) -> {
+
+                            case err {
+
+                                SignatureDecodeFail -> {
+
+                                    io.println(
+                                        "[CLIENT]: couldnt decode signature from post with owner: "
+                                        <>post.owner_name
+                                    )
+
+                                }
+
+                                PubkeyNotExists -> {
+
+                            io.println("[CLIENT]: couldnt find pub key for user: "<>post.owner_name<>" try searching for them using search-user <username>")
+                                }
+
+                                VerifyRuntimeError(err) -> {
+
+                            io.println("[CLIENT]: invalid public key format: "<> err <>"try searching for them using search-user: "<>post.owner_name)
+                                }
+
+                                UnalbetoVerifySignature -> {
+
+                            io.println("[CLIENT]: couldnt verify post with owners pub key: "<>post.owner_name)
+                                }
+                            }
+                            state
+                        }
+                    }
+                }
             )
         }
 
@@ -366,15 +453,59 @@ pub fn get_subredditfeed(resp: response.Response(BitArray), state: ReplState) ->
         Ok(gen_types.RestGetSubredditfeedSuccess(posts_list)) -> {
 
             io.println("[CLIENT]: got subreddit feed of posts")
-            ReplState(
-                ..state,
-                subreddits: list.fold(
-                                posts_list,
-                                state.subreddits,
-                                fn(acc, a) {
-                                    [a.id, ..acc]
-                                }
+
+            list.fold(
+                posts_list,
+                state,
+                fn(state, post) {
+
+                    case verify_post(post, state) {
+
+                        Ok(_) -> {
+
+                            display_post(post, [])
+                            ReplState(
+                                ..state,
+                                subreddits: [post.subreddit_id, ..state.subreddits],
+                                posts_data: dict.insert(
+                                                state.posts_data,
+                                                post.id,
+                                                post
+                                            )
                             )
+                        }
+
+                        Error(err) -> {
+
+                            case err {
+                                SignatureDecodeFail -> {
+
+                                    io.println(
+                                        "[CLIENT]: couldnt decode signature from post with owner: "
+                                        <>post.owner_name
+                                    )
+
+                                }
+
+                                PubkeyNotExists -> {
+
+                            io.println("[CLIENT]: couldnt find pub key for user: "<>post.owner_name<>" try searching for them using search-user <username>")
+                                }
+
+                                VerifyRuntimeError(err) -> {
+
+                            io.println("[CLIENT]: invalid public key format: "<> err <>"try searching for them using search-user: "<>post.owner_name)
+                                }
+
+                                UnalbetoVerifySignature -> {
+
+                            io.println("[CLIENT]: couldnt verify post with owners pub key: "<>post.owner_name)
+                                }
+                            }
+                            state
+                        }
+                    }
+                }
             )
         }
 
@@ -487,6 +618,81 @@ pub fn get_directmessages(resp: response.Response(BitArray), state: ReplState) -
         _ -> {
 
             state
+        }
+    }
+}
+
+type VerifyError {
+
+    SignatureDecodeFail
+
+    PubkeyNotExists
+
+    VerifyRuntimeError(err: String)
+
+    UnalbetoVerifySignature
+}
+
+
+fn verify_post(post: gen_types.Post, state: ReplState) {
+
+    let msg = utls.get_post_ser(post) 
+    echo msg
+    use sig_bits <- result.try(
+        result.map_error(
+        bit_array.base16_decode(post.signature),
+        fn(_) {SignatureDecodeFail}
+        )
+    )
+    use pub_key <- result.try(
+        result.map_error(
+            dict.get(state.pub_key_map, post.owner_id),
+            fn(_) {PubkeyNotExists}
+        )
+    )
+    echo pub_key
+    use verify <- result.try(
+        result.map_error(
+        rsa_keys.verify_message_with_pem_string(msg, pub_key, sig_bits),
+        fn(err) {VerifyRuntimeError(err)}
+        )
+    )
+    case verify {
+
+        True -> Ok(Nil)
+
+        False -> Error(UnalbetoVerifySignature)
+    }
+}
+
+fn display_post(post: gen_types.Post, comments: List(gen_types.Comment)) {
+
+    let gen_types.Post(title: title, body: body, subreddit_id: subreddit_id, ..) = post
+
+    io.println("SUBREDDIT: "<>subreddit_id<>"\n")
+    io.println("--------------------------------------------------------\n")
+    io.println("TITLE: "<>title<>"\n")
+    io.println("\n--------------------------------------------------------\n")
+    io.println("BODY:\n\t"<>body)
+    io.println("--------------------------------------------------------\n\n")
+
+    case list.length(comments) {
+
+        0 -> {Nil}
+
+        _ -> {
+            io.println("COMMENTS:\n")
+            list.each(
+                comments,
+                fn(a) {
+
+                    let gen_types.Comment(body: body, ..) = a
+
+                    io.println("--------------------------------------------------------\n")
+                    io.println("BODY:\n\t"<>body)
+                    io.println("--------------------------------------------------------\n\n")
+                }
+            )
         }
     }
 }

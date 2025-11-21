@@ -971,6 +971,7 @@ fn handle_user(
                         title: "test title",
                         body: "post_body:"<>int.to_string(int.random(10000)),
                         owner_id: "",
+                        owner_name: "",
                         subreddit_id: subreddit_id,
                         upvotes: 0,
                         downvotes: 0,

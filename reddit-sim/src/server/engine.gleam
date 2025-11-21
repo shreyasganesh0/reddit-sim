@@ -227,7 +227,7 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.LoginUser(send_pid, username, password, req_id) -> {
+        gen_types.LoginUser(send_pid, username, password, pub_key, req_id) -> {
 
             io.println("[ENGINE]: recvd login user msg username: " <> username <> " password: "<> password)
 
@@ -242,7 +242,7 @@ fn handle_engine(
 
                 case user_data.passhash == passhash {
 
-                    True -> Ok(user_id)
+                    True -> Ok(user_data)
 
                     False -> Error(Nil)
                 }
@@ -250,16 +250,24 @@ fn handle_engine(
 
             let new_state = case res {
 
-                Ok(user_id) -> {
+                Ok(user_data) -> {
 
-                    utls.send_to_pid(send_pid, #("login_user_success", user_id, req_id))
+                    utls.send_to_pid(send_pid, #("login_user_success", user_data.id, req_id))
                     gen_types.EngineState(
                         ..state,
                         user_pid_map: dict.insert(
                                         state.user_pid_map,
-                                        user_id,
+                                        user_data.id,
                                         send_pid
-                                    )
+                                    ),
+                        users_data: dict.insert(
+                            state.users_data,
+                            user_data.id,
+                            gen_types.User(
+                                ..user_data,
+                                pub_key: pub_key
+                                )
+                            )
                     )
                 }
 
@@ -616,7 +624,8 @@ fn handle_engine(
                                     ..post_data,
                                     subreddit_id: subreddit_uuid,
                                     owner_id: user.id,
-                                    id: post_uuid
+                                    id: post_uuid,
+                                    owner_name: user.username,
                                   )
                     io.println("[ENGINE]: creating post: " <> subreddit_uuid)
                     let new_state = gen_types.EngineState(
@@ -697,6 +706,7 @@ fn handle_engine(
                                     ..post_data,
                                     owner_id: user.id,
                                     id: post_uuid,
+                                    owner_name: user.username,
                                     signature: signature
                                   )
 
@@ -1840,28 +1850,23 @@ fn handle_engine(
                                         fn(_) {"no user found for name"}
                                         )
                                     )
-                Ok(search_id)
+                use user <- result.try(
+                    result.map_error(
+                        dict.get(state.users_data, search_id),
+                        fn(_) {"user data missing"}
+                        )
+                    )
+                Ok(user)
             }
 
             let new_state = case res {
 
-                Ok(search_id) -> {
+                Ok(user) -> {
 
-                    case dict.get(state.users_data, search_id) {
+                    utls.send_to_pid(
+                        send_pid, #("search_user_success", user.id, user.pub_key, req_id)
+                    )
 
-                        Ok(gen_types.User(pub_key, ..)) -> {
-                            utls.send_to_pid(
-                                send_pid, #("search_user_success", search_id, pub_key, req_id)
-                            )
-                        }
-
-                        Error(_) -> {
-                            let reason = "user doesnt exist"
-                            utls.send_to_pid(
-                                send_pid, #("search_user_failed", search_user, reason, req_id)
-                            )
-                        }
-                    }
                     state
 
                 }

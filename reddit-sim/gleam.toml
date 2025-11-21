@@ -27,7 +27,7 @@ gleam_http = ">= 4.3.0 and < 5.0.0"
 gleam_json = ">= 3.0.2 and < 4.0.0"
 in = ">= 1.1.0 and < 2.0.0"
 gleam_httpc = ">= 5.0.0 and < 6.0.0"
-rsa_keys = ">= 2.1.0 and < 3.0.0"
+rsa_keys = {path = "/Users/shreyas/Projects/rsa_keys"}
 
 [dev-dependencies]
 gleeunit = ">= 1.0.0 and < 2.0.0"

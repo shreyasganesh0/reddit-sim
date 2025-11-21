@@ -132,7 +132,7 @@ fn start_repl(state: response_handlers.ReplState) {
 
                 SignPostFailedError(err) -> {
 
-                    io.println("[CLIENT]: failed to create a valid signature for post: "<>err)
+                    io.println("[CLIENT]: failed to create a valid signature for post: "<> err)
                 }
                 
                 PostDoesntExistError -> {
@@ -169,11 +169,12 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
 
                         [username, password] -> {
 
-                            let #(priv_key, pub_key) = rsa_keys.generate_rsa_keys()
+                            let #(pub_key, priv_key) = rsa_keys.generate_rsa_keys()
                             let new_state = response_handlers.ReplState(
                                 ..state,
                                 priv_key: priv_key.pem,
-                                pub_key: pub_key.pem
+                                pub_key: pub_key.pem,
+                                user_name: username
                             )
                             Ok(
                                 #(
@@ -194,11 +195,18 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
 
                         [username, password] -> {
 
+                            let #(pub_key, priv_key) = rsa_keys.generate_rsa_keys()
+                            let new_state = response_handlers.ReplState(
+                                ..state,
+                                priv_key: priv_key.pem,
+                                pub_key: pub_key.pem,
+                                user_name: username
+                            )
                             Ok(
                                 #(
-                                request_builders.login_user(username, password),
+                                request_builders.login_user(username, password, pub_key.pem),
                                 response_handlers.login_user,
-                                state,
+                                new_state,
                                 )
                             )
                         }
@@ -427,6 +435,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                                         upvotes: 0,
                                         downvotes: 0,
                                         signature: "",
+                                        owner_name: state.user_name
                                     )
                                     case utls.get_post_sig(post, state.priv_key) {
 
@@ -946,6 +955,7 @@ pub fn main() {
 
     let init_state = response_handlers.ReplState(
                         user_id: "",
+                        user_name: "",
                         subreddits: [],
                         to_update_subreddit_name: "",
                         subreddit_rev_index: dict.new(),

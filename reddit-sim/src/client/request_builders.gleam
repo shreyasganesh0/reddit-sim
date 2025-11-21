@@ -35,9 +35,15 @@ pub fn register_user(username: String, password: String, pub_key: String) {
     |> request.set_method(http.Post)
 }
 
-pub fn login_user(username: String, password: String) {
+pub fn login_user(username: String, password: String, pub_key: String) {
 
-    let send_body = dict.from_list([#("username", username), #("password", password)])
+    let send_body = dict.from_list(
+        [
+        #("username", username),
+        #("password", password),
+        #("pub_key", pub_key)
+        ]
+    )
     |> json.dict(function.identity, json.string)
     |> json.to_string
     |> bit_array.from_string
@@ -175,7 +181,6 @@ pub fn create_repost(post_id: String, user_id: String, sig: String) {
 }
 
 pub fn get_post(post_id: String, user_id: String) {
-
 
     let base_req = request.to("http://localhost:4000/api/v1/post/"<>post_id)
     |> result.unwrap(request.new())
