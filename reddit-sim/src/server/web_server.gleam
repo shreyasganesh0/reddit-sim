@@ -11,6 +11,7 @@ import gleam/erlang/atom
 import gleam/erlang/node
 
 import server/api_handlers
+import server/sse_handlers
 
 import generated/generated_types as gen_types
 import generated/generated_decoders as gen_decode
@@ -157,6 +158,11 @@ fn request_handler(
                 ["dm"] -> {
 
                     api_handlers.get_directmessages(req, engine_sub, self_selector)
+                }
+
+                ["notifications"] -> {
+
+                    sse_handlers.register_notifications(req, engine_sub, self_selector)
                 }
 
                 _ -> api_handlers.error_page_not_found()

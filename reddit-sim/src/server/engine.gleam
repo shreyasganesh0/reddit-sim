@@ -96,6 +96,7 @@ fn init(
                         num_users: num_users,
                         metrics_pid: pid,
                         votable_user_vote_map: dict.new(),
+                        user_sse_pid_map: dict.new(),
                      )
 
     let selector = process.new_selector() 
@@ -148,6 +149,39 @@ fn handle_engine(
                 }
             }
         }
+//------------------------------------------------------------------------------------------------------
+
+        gen_types.RegisterNotifications(send_pid, user_id) -> {
+
+            let res = {
+                use _ <- result.try(utls.validate_request(send_pid, user_id, state.user_pid_map, state.users_data))
+                Ok(Nil)
+            }
+
+            let new_state = case res {
+
+                Ok(_) -> {
+
+                    io.println("[ENGINE]: regsitered sse pid for callback user: "<>user_id)
+                    gen_types.EngineState(
+                        ..state,
+                        user_sse_pid_map: dict.insert(
+                            state.user_sse_pid_map,
+                            user_id,
+                            send_pid
+                        )
+                    )
+                }
+                
+                Error(_) -> {
+
+                    state
+                }
+            }
+
+            actor.continue(new_state)
+        }
+
 //------------------------------------------------------------------------------------------------------
 
         gen_types.MetricsEnginestats(send_pid) -> {
