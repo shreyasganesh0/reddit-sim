@@ -57,14 +57,16 @@ fn handle_client_sse(
     msg: sse.SSEEvent
     ) {
 
-    io.println("[SSE_CLIENT]: recvd msg")
-    echo msg
-
     case msg {
 
         sse.Event(_event_type, _event_id, event) -> {
 
-            io.println("[SSE_CLIENT]: recvd message: "<>event)
+            case event {
+
+                ": ping"<>_rest -> Nil
+
+                _ -> io.println("[SSE_CLIENT]: recvd message: "<>event)
+            }
             actor.continue(state)
         }
 

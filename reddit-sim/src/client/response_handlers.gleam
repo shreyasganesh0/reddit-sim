@@ -5,6 +5,7 @@ import gleam/dict.{type Dict}
 import gleam/list
 import gleam/result
 import gleam/bit_array
+import gleam/erlang/process
 
 import rsa_keys
 import utls
@@ -629,7 +630,11 @@ pub fn register_notifications(_resp: response.Response(BitArray), state: ReplSta
 
     let req = request_builders.register_notifications(state.user_id)
 
-    let _ = client_sse.start(req)
+    process.spawn(fn(){
+        let _ = client_sse.start(req)
+        process.sleep_forever()
+        })
+
     state
 }
 

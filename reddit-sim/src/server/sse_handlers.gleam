@@ -2,6 +2,7 @@ import gleam/result
 import gleam/io
 import gleam/bytes_tree
 import gleam/string_tree
+import gleam/string
 import gleam/bit_array
 
 import gleam/http/response
@@ -35,6 +36,8 @@ type SSEMessage {
     DmStarted(dm: String)
 
     DmReplied(dm: String)
+
+    Hearbeat
 }
 
 
@@ -109,6 +112,7 @@ fn notification_init(
     |> process.select_map(sub, fn(msg) {msg})
 
     utls.send_to_pid(engine_pid, #("register_notifications", self(), user_id))
+    process.send(sub, Hearbeat)
 
     let res = actor.initialised(init_state)
     |> actor.returning(sub)
@@ -125,6 +129,18 @@ fn handle_notifications(
 
     case msg {
 
+        Hearbeat -> {
+
+            let padding = string.repeat(" ", 1024)
+            
+            let _ = string_tree.from_string(": ping " <> padding <> "\n\n")
+                |> mist.event
+                |> mist.send_event(conn, _)
+
+            process.send_after(state.self_sub, 2000, Hearbeat)
+            actor.continue(state)
+        }
+
         DmStarted(dm) -> {
 
             io.println("[SSE_SERVER]: got notification dm start: "<>dm)
@@ -132,7 +148,6 @@ fn handle_notifications(
             case string_tree.new()
             |> string_tree.prepend(dm)
             |> mist.event
-            |> mist.event_name("dm_started")
             |> mist.send_event(conn, _) {
 
                 Ok(_) -> {
