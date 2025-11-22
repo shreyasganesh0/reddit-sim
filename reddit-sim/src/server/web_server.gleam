@@ -160,7 +160,7 @@ fn request_handler(
                     api_handlers.get_directmessages(req, engine_sub, self_selector)
                 }
 
-                ["notifications"] -> {
+                ["notification"] -> {
 
                     sse_handlers.register_notifications(req, engine_sub, self_selector)
                 }

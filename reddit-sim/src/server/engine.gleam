@@ -1941,7 +1941,7 @@ fn handle_engine(
             let new_state = case res {
 
                 Ok(#(from_user, to_user)) -> {
-
+                    let dm_msg = from_user.username<>": "<>message
                     let dm_id = uuid.v4_string()
                     let dm = gen_types.Dm(
                                 id: dm_id,
@@ -1969,6 +1969,21 @@ fn handle_engine(
                                                         )
                                                     )
                                     )
+
+                    case dict.get(state.user_sse_pid_map, to_user.id) {
+
+                        Ok(sse_pid) -> {
+
+                            io.println("[ENGINE]: sending start dm notification to user: "<> to_user.id)
+                            utls.send_to_pid(sse_pid, #("dm_started", dm_msg))
+                            Nil
+                        }
+
+                        Error(_) -> {
+
+                            Nil
+                        }
+                    }
                     utls.send_to_pid(send_pid, #("start_directmessage_success", dm_id, req_id))
                     new_state
 
@@ -2010,6 +2025,7 @@ fn handle_engine(
 
                 Ok(#(from_user, dm)) -> {
 
+                    let dm_msg = from_user.username<>": "<>message
                     let new_state = gen_types.EngineState(
                                         ..state,
                                         dms_data: dict.insert(
@@ -2018,12 +2034,35 @@ fn handle_engine(
                                                     gen_types.Dm(
                                                         ..dm,
                                                         msgs_list: [
-                                                            from_user.username<>": "<>message,
+                                                            dm_msg,
                                                             ..dm.msgs_list
                                                             ]
                                                     ) 
                                                   ),
                                     )
+                    case dm.participants {
+
+                        [to_user_id, _] -> {
+
+                            case dict.get(state.user_sse_pid_map, to_user_id) {
+
+                                Ok(sse_pid) -> {
+
+                                    io.println("[ENGINE]: sending reply dm notification to user: "<> to_user_id)
+
+                                    utls.send_to_pid(sse_pid, #("dm_replied", dm_msg))
+                                    Nil
+                                }
+
+                                Error(_) -> {
+
+                                    Nil
+                                }
+                            }
+                        }
+
+                        _ -> Nil
+                    }
                     utls.send_to_pid(send_pid, #("reply_directmessage_success", dm_id, req_id))
                     new_state
 

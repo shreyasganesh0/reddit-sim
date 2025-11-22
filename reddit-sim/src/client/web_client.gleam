@@ -58,6 +58,17 @@ fn start_repl(state: response_handlers.ReplState) {
                 Ok(#(response.new(200)|>response.map(bit_array.from_string), response_handlers.logout, state))
             }
 
+            "notifications" -> {
+
+                    Ok(
+                        #(
+                        response.new(200)|>response.map(bit_array.from_string),
+                        response_handlers.register_notifications,
+                        state
+                        )
+                    )
+            }
+
             _ -> {
 
                 use #(req, resp_handler, state) <- result.try(parse_line(line, state))
@@ -942,6 +953,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                         )
                     )
                 }
+
                 _ -> Error(CommandError)
             }
         }

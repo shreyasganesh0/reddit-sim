@@ -6,6 +6,7 @@ import gleam/int
 import gleam/dict
 import gleam/result
 import gleam/bit_array
+import gleam/bytes_tree
 
 import generated/generated_types as gen_types
 
@@ -327,6 +328,17 @@ pub fn get_directmessages(user_id: String) {
     let base_req = request.to("http://localhost:4000/api/v1/dm")
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
+    
+    base_req
+    |> request.set_header("authorization", user_id)
+    |> request.set_method(http.Get)
+}
+
+pub fn register_notifications(user_id: String) {
+
+    let base_req = request.to("http://localhost:4000/api/v1/notification")
+    |> result.unwrap(request.new())
+    |> request.map(bytes_tree.from_string)
     
     base_req
     |> request.set_header("authorization", user_id)

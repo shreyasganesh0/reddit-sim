@@ -9,6 +9,9 @@ import gleam/bit_array
 import rsa_keys
 import utls
 
+import client/request_builders
+import client/client_sse
+
 import generated/generated_decoders as gen_decode
 import generated/generated_types as gen_types
 
@@ -620,6 +623,14 @@ pub fn get_directmessages(resp: response.Response(BitArray), state: ReplState) -
             state
         }
     }
+}
+
+pub fn register_notifications(_resp: response.Response(BitArray), state: ReplState) -> ReplState {
+
+    let req = request_builders.register_notifications(state.user_id)
+
+    let _ = client_sse.start(req)
+    state
 }
 
 type VerifyError {

@@ -1,5 +1,7 @@
 import gleam/result
+import gleam/io
 import gleam/bytes_tree
+import gleam/string_tree
 import gleam/bit_array
 
 import gleam/http/response
@@ -16,7 +18,6 @@ import mist
 import utls
 
 import generated/generated_types as gen_types
-import generated/generated_decoders as gen_decode
 
 
 type SSEState {
@@ -31,9 +32,9 @@ type SSEState {
 
 type SSEMessage {
 
-    DmStarted(dm: gen_types.Dm)
+    DmStarted(dm: String)
 
-    DmReplied(dm: gen_types.Dm)
+    DmReplied(dm: String)
 }
 
 
@@ -46,6 +47,16 @@ pub fn register_notifications(
     self_selector: process.Selector(gen_types.UserMessage),
     ) -> response.Response(mist.ResponseData) {
 
+    let down_selector = 
+        process.ProcessDown(
+            process.monitor(process.self()),
+            process.self(),
+            process.Normal
+        )
+    let selector = process.new_selector()
+    |> process.select_monitors(
+        fn(_down) {down_selector}
+    )
     {
     use user_id <- result.try(
         result.map_error(
@@ -60,10 +71,11 @@ pub fn register_notifications(
             }
         )
     )
-    let def_resp = response.new(200)|>response.set_body(
-                    bytes_tree.new()
-                    |>bytes_tree.append(bit_array.from_string("Invalid input too long"))
-                )
+    let def_resp = response.new(200)
+                |> response.set_header("content-type", "text/event-stream")
+                |> response.set_header("cache-control", "no-cache")
+                |> response.set_header("connection", "keep-alive")
+                |>response.set_body(mist.ServerSentEvents(selector))
     Ok(mist.server_sent_events(
         req,
         def_resp,
@@ -71,7 +83,7 @@ pub fn register_notifications(
         handle_notifications
     ))
     }
-    |> result.unwrap(response.new(404)|>response.set_body(mist.Bytes(bytes_tree.new())))
+    |> result.unwrap(response.new(404)|>response.set_body(mist.ServerSentEvents(selector)))
         
 }
 
@@ -96,7 +108,7 @@ fn notification_init(
     let selector = utls.create_selector(selector, selector_tag_list)
     |> process.select_map(sub, fn(msg) {msg})
 
-    utls.send_to_pid(engine_pid, #("register_notification", self(), user_id))
+    utls.send_to_pid(engine_pid, #("register_notifications", self(), user_id))
 
     let res = actor.initialised(init_state)
     |> actor.returning(sub)
@@ -108,18 +120,49 @@ fn notification_init(
 fn handle_notifications(
     state: SSEState,
     msg: SSEMessage,
-    _conn: mist.SSEConnection
+    conn: mist.SSEConnection
     ) -> actor.Next(SSEState, SSEMessage) {
 
     case msg {
 
-        DmStarted(_dm) -> {
+        DmStarted(dm) -> {
 
+            io.println("[SSE_SERVER]: got notification dm start: "<>dm)
+
+            case string_tree.new()
+            |> string_tree.prepend(dm)
+            |> mist.event
+            |> mist.event_name("dm_started")
+            |> mist.send_event(conn, _) {
+
+                Ok(_) -> {
+                    io.println("[SSE_SERVER]: send event: "<>dm)
+                }
+
+                Error(_) -> {
+                    io.println("[SSE_SERVER]: failed send event: "<>dm)
+                }
+            }
             actor.continue(state)
         }
 
-        DmReplied(_dm) -> {
+        DmReplied(dm) -> {
 
+            io.println("[SSE_SERVER]: got notification dm start: "<>dm)
+
+            case string_tree.new()
+            |> string_tree.prepend(dm)
+            |> mist.event
+            |> mist.send_event(conn, _) {
+
+                Ok(_) -> {
+                    io.println("[SSE_SERVER]: send event: "<>dm)
+                }
+
+                Error(_) -> {
+                    io.println("[SSE_SERVER]: failed send event: "<>dm)
+                }
+            }
             actor.continue(state)
         }
     }
@@ -131,7 +174,7 @@ fn replied_selector(
 
 	let res = {
 
-		use dm <- result.try(decode.run(data, decode.at([1], gen_decode.dm_decoder())))
+		use dm <- result.try(decode.run(data, decode.at([1], decode.string)))
 		Ok(dm)
 	}
 
@@ -155,7 +198,7 @@ fn started_selector(
 
 	let res = {
 
-		use dm <- result.try(decode.run(data, decode.at([1], gen_decode.dm_decoder())))
+		use dm <- result.try(decode.run(data, decode.at([1], decode.string)))
 		Ok(dm)
 	}
 
