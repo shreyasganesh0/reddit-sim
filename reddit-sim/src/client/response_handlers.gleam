@@ -341,7 +341,6 @@ pub fn get_post(resp: response.Response(BitArray), state: ReplState) -> ReplStat
 
 pub fn create_comment(resp: response.Response(BitArray), state: ReplState) -> ReplState {
 
-    echo resp
     case json.parse_bits(resp.body, gen_decode.rest_create_comment_success_decoder()) {
 
         Ok(gen_types.RestCreateCommentSuccess(comment_id)) -> {
@@ -362,7 +361,6 @@ pub fn create_comment(resp: response.Response(BitArray), state: ReplState) -> Re
 
 pub fn create_vote(resp: response.Response(BitArray), state: ReplState) -> ReplState {
 
-    echo resp
     case json.parse_bits(resp.body, gen_decode.rest_create_vote_success_decoder()) {
 
         Ok(gen_types.RestCreateVoteSuccess(comment_id)) -> {
@@ -380,7 +378,6 @@ pub fn create_vote(resp: response.Response(BitArray), state: ReplState) -> ReplS
 
 pub fn get_feed(resp: response.Response(BitArray), state: ReplState) -> ReplState {
 
-    echo resp
     case json.parse_bits(resp.body, gen_decode.rest_get_feed_success_decoder()) {
 
         Ok(gen_types.RestGetFeedSuccess(posts_list)) -> {
@@ -451,7 +448,6 @@ pub fn get_feed(resp: response.Response(BitArray), state: ReplState) -> ReplStat
 
 pub fn get_subredditfeed(resp: response.Response(BitArray), state: ReplState) -> ReplState {
 
-    echo resp
     case json.parse_bits(resp.body, gen_decode.rest_get_subredditfeed_success_decoder()) {
 
         Ok(gen_types.RestGetSubredditfeedSuccess(posts_list)) -> {
@@ -522,7 +518,6 @@ pub fn get_subredditfeed(resp: response.Response(BitArray), state: ReplState) ->
 
 pub fn start_directmessage(resp: response.Response(BitArray), state: ReplState) -> ReplState {
 
-    echo resp
     case json.parse_bits(resp.body, gen_decode.rest_start_directmessage_success_decoder()) {
 
         Ok(gen_types.RestStartDirectmessageSuccess(dm_id)) -> {
@@ -548,7 +543,6 @@ pub fn start_directmessage(resp: response.Response(BitArray), state: ReplState) 
 
 pub fn reply_directmessage(resp: response.Response(BitArray), state: ReplState) -> ReplState {
 
-    echo resp
     case json.parse_bits(resp.body, gen_decode.rest_reply_directmessage_success_decoder()) {
 
         Ok(gen_types.RestReplyDirectmessageSuccess(dm_id)) -> {
@@ -574,12 +568,10 @@ pub fn reply_directmessage(resp: response.Response(BitArray), state: ReplState) 
 
 pub fn get_directmessages(resp: response.Response(BitArray), state: ReplState) -> ReplState {
 
-    echo resp
     case json.parse_bits(resp.body, gen_decode.rest_get_directmessages_success_decoder()) {
 
         Ok(gen_types.RestGetDirectmessagesSuccess(dms)) -> {
 
-            echo dms
 
             io.println("[CLIENT]: got dms")
             let new_state = ReplState(
@@ -661,7 +653,6 @@ type VerifyError {
 fn verify_post(post: gen_types.Post, state: ReplState) {
 
     let msg = utls.get_post_ser(post) 
-    echo msg
     use sig_bits <- result.try(
         result.map_error(
         bit_array.base16_decode(post.signature),
@@ -674,7 +665,6 @@ fn verify_post(post: gen_types.Post, state: ReplState) {
             fn(_) {PubkeyNotExists}
         )
     )
-    echo pub_key
     use verify <- result.try(
         result.map_error(
         rsa_keys.verify_message_with_pem_string(msg, pub_key, sig_bits),

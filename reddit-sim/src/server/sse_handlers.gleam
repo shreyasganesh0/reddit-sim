@@ -37,6 +37,10 @@ type SSEMessage {
 
     DmReplied(dm: String)
 
+    PostCreated(post: String)
+
+    CommentCreated(comment: String)
+
     Hearbeat
 }
 
@@ -180,6 +184,46 @@ fn handle_notifications(
             }
             actor.continue(state)
         }
+
+        PostCreated(dm) -> {
+
+            io.println("[SSE_SERVER]: got notification post created: "<>dm)
+
+            case string_tree.new()
+            |> string_tree.prepend(dm)
+            |> mist.event
+            |> mist.send_event(conn, _) {
+
+                Ok(_) -> {
+                    io.println("[SSE_SERVER]: send event: "<>dm)
+                }
+
+                Error(_) -> {
+                    io.println("[SSE_SERVER]: failed send event: "<>dm)
+                }
+            }
+            actor.continue(state)
+        }
+
+        CommentCreated(dm) -> {
+
+            io.println("[SSE_SERVER]: got notification comment created: "<>dm)
+
+            case string_tree.new()
+            |> string_tree.prepend(dm)
+            |> mist.event
+            |> mist.send_event(conn, _) {
+
+                Ok(_) -> {
+                    io.println("[SSE_SERVER]: send event: "<>dm)
+                }
+
+                Error(_) -> {
+                    io.println("[SSE_SERVER]: failed send event: "<>dm)
+                }
+            }
+            actor.continue(state)
+        }
     }
 }
 
@@ -231,10 +275,60 @@ fn started_selector(
 	}
 }
 
+fn post_created_selector(
+	data: dynamic.Dynamic
+	) -> SSEMessage {
+
+	let res = {
+
+		use post <- result.try(decode.run(data, decode.at([1], decode.string)))
+		Ok(post)
+	}
+
+	case res {
+
+		Ok(post) -> {
+
+            PostCreated(post)
+		}
+
+		Error(_) -> {
+
+			panic as "Failed to parse post created"
+		}
+	}
+}
+
+fn comment_created_selector(
+	data: dynamic.Dynamic
+	) -> SSEMessage {
+
+	let res = {
+
+		use comment <- result.try(decode.run(data, decode.at([1], decode.string)))
+		Ok(comment)
+	}
+
+	case res {
+
+		Ok(comment) -> {
+
+            CommentCreated(comment)
+		}
+
+		Error(_) -> {
+
+			panic as "Failed to parse comment created"
+		}
+	}
+}
+
 fn get_sse_selector_list() {
 
     [
     #("dm_started", started_selector, 1),
-    #("dm_replied", replied_selector, 1)
+    #("dm_replied", replied_selector, 1),
+    #("post_created", post_created_selector, 1),
+    #("comment_created", comment_created_selector, 1)
     ]
 }

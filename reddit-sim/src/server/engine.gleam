@@ -640,33 +640,33 @@ fn handle_engine(
                                     state.users_data
                                     )
                                 )
-                use _subreddit_uuid <- result.try(
+                use subreddit <- result.try(
                                         result.map_error(
                                             dict.get(state.subreddits_data, subreddit_id),
                                             fn(_) {"Subreddit does not exist"}
                                         )
                                      )
-                Ok(#(user,subreddit_id))
+                Ok(#(user,subreddit))
             }
 
             let new_state = case res {
 
-                Ok(#(user, subreddit_uuid)) -> {
+                Ok(#(user, subreddit)) -> {
 
                     let post_uuid = uuid.v4_string()
                     let post_data = gen_types.Post(
                                     ..post_data,
-                                    subreddit_id: subreddit_uuid,
+                                    subreddit_id: subreddit.id,
                                     owner_id: user.id,
                                     id: post_uuid,
                                     owner_name: user.username,
                                   )
-                    io.println("[ENGINE]: creating post: " <> subreddit_uuid)
+                    io.println("[ENGINE]: creating post: " <> subreddit.id)
                     let new_state = gen_types.EngineState(
                                         ..state,
                                         subreddit_posts_map: dict.upsert(
                                             state.subreddit_posts_map,
-                                            subreddit_uuid,
+                                            subreddit.id,
                                             fn(maybe_posts) {
 
                                                 case maybe_posts {
@@ -685,7 +685,7 @@ fn handle_engine(
                                         post_subreddit_map: dict.insert(
                                             state.post_subreddit_map,
                                             post_uuid,
-                                            subreddit_uuid
+                                            subreddit.id
                                         ),
 
                                         posts_data: dict.insert(
@@ -694,6 +694,33 @@ fn handle_engine(
                                             post_data
                                         )
                                     )
+                    
+                    case dict.get(state.subreddit_users_map, subreddit.id){
+
+                        Ok(users_list) -> {
+
+                            list.each(users_list, fn(user_id) {
+                                case dict.get(state.user_sse_pid_map, user_id) {
+
+                                    Ok(sse_pid) -> {
+
+                                        io.println("[ENGINE]: sending post create notification to user: "<> user_id)
+                                        let post_msg = "new post in subreddit: "<>subreddit.name
+                                        utls.send_to_pid(sse_pid, #("post_created", post_msg))
+                                        Nil
+                                    }
+
+                                    Error(_) -> {
+
+                                        Nil
+                                    }
+                                }
+                            }
+                            )
+                        }
+
+                        Error(_) -> Nil
+                    }
                     utls.send_to_pid(send_pid, #("create_post_success", post_uuid, req_id))
                     new_state
                 }
@@ -746,7 +773,7 @@ fn handle_engine(
 
                     case dict.get(state.subreddits_data, post_data.subreddit_id) {
 
-                        Ok(_) -> {
+                        Ok(subreddit) -> {
 
                             io.println("[ENGINE]: creating repost: " <> post_uuid)
                             let new_state = gen_types.EngineState(
@@ -781,6 +808,32 @@ fn handle_engine(
                                                     post_data
                                                 )
                                             )
+                            case dict.get(state.subreddit_users_map, subreddit.id) {
+
+                                Ok(users_list) -> {
+
+                                    list.each(users_list, fn(user_id) {
+                                        case dict.get(state.user_sse_pid_map, user_id) {
+
+                                            Ok(sse_pid) -> {
+
+                                                io.println("[ENGINE]: sending post create notification to user: "<> user_id)
+                                                let post_msg = "new post in subreddit: "<>subreddit.name
+                                                utls.send_to_pid(sse_pid, #("post_create", post_msg))
+                                                Nil
+                                            }
+
+                                            Error(_) -> {
+
+                                                Nil
+                                            }
+                                        }
+                                    }
+                                    )
+                                }
+
+                                Error(_) -> Nil
+                            }
                             utls.send_to_pid(send_pid, #("create_repost_success", post_uuid, req_id))
                             new_state
                         }
@@ -998,23 +1051,24 @@ fn handle_engine(
                                     state.users_data
                                     )
                                 )
-                use _parent <- result.try(
+                use #(parent_t, parent) <- result.try(
                                     utls.check_comment_parent(
                                         commentable_id,
                                         state.posts_data,
                                         state.comments_data,
                                     )
                                 )
-                Ok(user)
+                Ok(#(user, parent_t, parent))
             }
 
             let new_state = case res {
 
-                Ok(user) -> {
+                Ok(#(user, parent_t, parent)) -> {
 
                     let comment_uuid = uuid.v4_string()
                     let comment = gen_types.Comment(
                                     ..comment,
+                                    parent_id: commentable_id,
                                     owner_id: user.id,
                                     id:comment_uuid
                                   )
@@ -1045,6 +1099,38 @@ fn handle_engine(
                             comment
                         )
                     )
+
+                    let to_user_id = case parent_t {
+
+                        "post" -> {
+
+                            parent.post.owner_id
+                        }
+
+                        "comment" -> {
+
+                            parent.comment.owner_id
+                        }
+
+                        _ -> panic as "invalid parent type found"
+                    }
+
+                    case dict.get(state.user_sse_pid_map, to_user_id) {
+
+                        Ok(sse_pid) -> {
+
+                            let comment_msg = "someone replied to your "<>parent_t
+                            io.println("[ENGINE]: sending comment notification to user: "<> to_user_id)
+                            utls.send_to_pid(sse_pid, #("comment_created",comment_msg))
+                            Nil
+                        }
+
+                        Error(_) -> {
+
+                            Nil
+                        }
+                    }
+
                     
                     utls.send_to_pid(send_pid, #("create_comment_success", comment_uuid, req_id)) 
                     new_state
@@ -1975,7 +2061,7 @@ fn handle_engine(
                         Ok(sse_pid) -> {
 
                             io.println("[ENGINE]: sending start dm notification to user: "<> to_user.id)
-                            utls.send_to_pid(sse_pid, #("dm_started", dm_msg))
+                            utls.send_to_pid(sse_pid, #("dm_started", "recieved dm -> "<>dm_msg))
                             Nil
                         }
 
@@ -2076,7 +2162,7 @@ fn handle_engine(
 
                             io.println("[ENGINE]: sending reply dm notification to user: "<> to_uuid)
 
-                            utls.send_to_pid(sse_pid, #("dm_replied", dm_msg))
+                            utls.send_to_pid(sse_pid, #("dm_replied", "recieved dm -> "<>dm_msg))
                             Nil
                         }
 

@@ -34,7 +34,7 @@ fn init(
 
         Ok(#(mgr, close_handler_sub)) -> {
 
-            io.println("[SSE_CLIENT]: started sse_handler")
+            io.println("[NOTIFICATION]: started sse_handler")
             let init_state = ClientSSEState(
                 self_sub: sub,
                 close_handler_sub: close_handler_sub,
@@ -46,7 +46,7 @@ fn init(
 
         Error(_) -> {
 
-            io.println("[SSE_CLIENT]: failed to start sse_handler")
+            io.println("[NOTIFICATION]: failed start sse_handler")
             Error("failed to send sse")
         }
     }
@@ -65,14 +65,14 @@ fn handle_client_sse(
 
                 ": ping"<>_rest -> Nil
 
-                _ -> io.println("[SSE_CLIENT]: recvd message: "<>event)
+                _ -> io.println("[NOTIFICATION]: "<>event)
             }
             actor.continue(state)
         }
 
         sse.Closed -> {
 
-            io.println("[SSE_CLIENT]: recvd close")
+            io.println("[NOTIFICATION]: recvd close")
             actor.stop()
         }
     }
