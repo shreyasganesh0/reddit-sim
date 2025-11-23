@@ -915,17 +915,15 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                                     fn(_) {UserUnknownError}
                                 )
                             )
-                            use dm_id <- result.try(
-                                    result.map_error(
-                                        dict.get(state.user_dm_map, to_send_id),
-                                        fn(_) {DmNotExistsError}
-                                    )
-                                )
+                            let new_state = response_handlers.ReplState(
+                                ..state,
+                                to_update_user_dm: to_send_id,
+                            )
                             Ok(
                                 #(
-                                request_builders.reply_directmessage(dm_id, user_id, msg),
+                                request_builders.reply_directmessage(to_send_id, user_id, msg),
                                 response_handlers.reply_directmessage,
-                                state
+                                new_state
                                 )
                             )
                         }

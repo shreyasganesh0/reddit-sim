@@ -2001,7 +2001,7 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.ReplyDirectmessage(send_pid, uuid, dm_id, message, req_id) -> {
+        gen_types.ReplyDirectmessage(send_pid, uuid, to_uuid, message, req_id) -> {
 
             let res = {
                 use from_user <- result.try(
@@ -2012,6 +2012,36 @@ fn handle_engine(
                                     state.users_data
                                     )
                                 )
+                use to_user <- result.try(
+                                result.map_error(
+                                    dict.get(state.users_data, to_uuid),
+                                    fn(_) {"invalid recipient id"}
+                                )
+                               )
+                use dm_id <- result.try(
+                    fn() {
+
+                        case list.map2(
+                            from_user.dms_list,
+                            to_user.dms_list,
+                            fn (a, b) {
+
+                                case a == b {
+
+                                    True -> a
+
+                                    False -> ""
+                                }
+                            }
+                        )
+                        |> list.filter(fn(a) {a!=""})
+                        {
+                            [dm_id] -> Ok(dm_id)
+
+                            _ -> Error("couldnt find dm id between the two users")
+                        }
+                    }()
+                )
                 use dm <- result.try(
                             result.map_error(
                                 dict.get(state.dms_data, dm_id),
@@ -2030,7 +2060,7 @@ fn handle_engine(
                                         ..state,
                                         dms_data: dict.insert(
                                                     state.dms_data,
-                                                    dm_id,
+                                                    dm.id,
                                                     gen_types.Dm(
                                                         ..dm,
                                                         msgs_list: [
@@ -2040,37 +2070,30 @@ fn handle_engine(
                                                     ) 
                                                   ),
                                     )
-                    case dm.participants {
+                    case dict.get(state.user_sse_pid_map, to_uuid) {
 
-                        [to_user_id, _] -> {
+                        Ok(sse_pid) -> {
 
-                            case dict.get(state.user_sse_pid_map, to_user_id) {
+                            io.println("[ENGINE]: sending reply dm notification to user: "<> to_uuid)
 
-                                Ok(sse_pid) -> {
-
-                                    io.println("[ENGINE]: sending reply dm notification to user: "<> to_user_id)
-
-                                    utls.send_to_pid(sse_pid, #("dm_replied", dm_msg))
-                                    Nil
-                                }
-
-                                Error(_) -> {
-
-                                    Nil
-                                }
-                            }
+                            utls.send_to_pid(sse_pid, #("dm_replied", dm_msg))
+                            Nil
                         }
 
-                        _ -> Nil
+                        Error(_) -> {
+
+                            Nil
+                        }
                     }
-                    utls.send_to_pid(send_pid, #("reply_directmessage_success", dm_id, req_id))
+
+                    utls.send_to_pid(send_pid, #("reply_directmessage_success", dm.id, req_id))
                     new_state
 
                 }
 
                 Error(reason) -> {
 
-                    utls.send_to_pid(send_pid, #("reply_directmessage_failed", dm_id, reason, req_id))
+                    utls.send_to_pid(send_pid, #("reply_directmessage_failed", to_uuid, reason, req_id))
                     state
                 }
 

@@ -554,7 +554,15 @@ pub fn reply_directmessage(resp: response.Response(BitArray), state: ReplState) 
         Ok(gen_types.RestReplyDirectmessageSuccess(dm_id)) -> {
 
             io.println("[CLIENT]: reply dm with dm id: "<> dm_id)
-            state
+            ReplState(
+                ..state,
+                user_dm_map: dict.insert(
+                    state.user_dm_map,
+                    state.to_update_user_dm,
+                    dm_id
+                ),
+                to_update_user_dm: ""
+            )
         }
 
         _ -> {

@@ -1691,8 +1691,8 @@ pub fn reply_directmessage(
         )
     )
 
-    let assert gen_types.RestReplyDirectmessage(dm_id, message) = req_parsed
-    #("reply_directmessage", self(), user_id, dm_id, message, "") 
+    let assert gen_types.RestReplyDirectmessage(to_user_id, message) = req_parsed
+    #("reply_directmessage", self(), user_id, to_user_id, message, "") 
     |> utls.send_to_pid(engine_pid, _)
 
     use resp_ans <- result.try(

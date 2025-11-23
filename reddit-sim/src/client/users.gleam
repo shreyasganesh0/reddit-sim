@@ -1554,7 +1554,7 @@ fn handle_user(
 
         gen_types.InjectReplyDirectmessage -> {
 
-            let assert [dm_to_send] = list.sample(state.dms, 1)
+            let assert [dm_to_send] = list.sample(state.users, 1)
             io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting reply dm")
             let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
 
@@ -1589,9 +1589,9 @@ fn handle_user(
             actor.continue(state)
         }
 
-        gen_types.ReplyDirectmessageFailed(dm_id, fail_reason, req_id) -> {
+        gen_types.ReplyDirectmessageFailed(to_user_id, fail_reason, req_id) -> {
 
-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to reply " <> dm_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to reply " <> to_user_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
 
             utls.send_to_pid(
                 state.metrics_pid, 

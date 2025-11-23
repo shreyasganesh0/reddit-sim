@@ -300,11 +300,11 @@ pub fn start_directmessage(to_send_id: String, user_id: String, message: String)
     |> request.set_method(http.Post)
 }
 
-pub fn reply_directmessage(dm_id: String, user_id: String, message: String) {
+pub fn reply_directmessage(to_user_id: String, user_id: String, message: String) {
 
     let send_body = json.object(
         [
-        #("dm_id", json.string(dm_id)),
+        #("to_user_id", json.string(to_user_id)),
         #("message", json.string(message)),
         ]
     )
@@ -312,7 +312,7 @@ pub fn reply_directmessage(dm_id: String, user_id: String, message: String) {
     |> bit_array.from_string
 
     let content_length = bit_array.byte_size(send_body)
-    let base_req = request.to("http://localhost:4000/api/v1/dm/"<>dm_id<>"/reply")
+    let base_req = request.to("http://localhost:4000/api/v1/dm/"<>to_user_id<>"/reply")
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
