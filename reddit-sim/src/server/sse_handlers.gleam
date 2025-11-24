@@ -27,7 +27,8 @@ type SSEState {
         self_sub: process.Subject(SSEMessage),
         engine_pid: process.Pid,
         self_selector: process.Selector(gen_types.UserMessage),
-        user_id: String
+        user_id: String,
+        signature: String
     )
 }
 
@@ -56,7 +57,7 @@ pub fn register_notifications(
 
     let down_selector = 
         process.ProcessDown(
-            process.monitor(process.self()),
+            process.monitor(engine_pid),
             process.self(),
             process.Normal
         )
@@ -78,6 +79,20 @@ pub fn register_notifications(
             }
         )
     )
+    use sig <- result.try(
+        result.map_error(
+            request.get_header(req, "signature"),
+            fn(_) {
+
+                    response.new(401)
+                    |>response.set_body(
+                        bytes_tree.new()
+                        |>bytes_tree.append(bit_array.from_string("Unauthorized"))
+                    )
+
+            }
+        )
+    )
     let def_resp = response.new(200)
                 |> response.set_header("content-type", "text/event-stream")
                 |> response.set_header("cache-control", "no-cache")
@@ -86,7 +101,7 @@ pub fn register_notifications(
     Ok(mist.server_sent_events(
         req,
         def_resp,
-        fn(sub) {notification_init(sub, engine_pid, self_selector, user_id)},
+        fn(sub) {notification_init(sub, engine_pid, self_selector, user_id, sig)},
         handle_notifications
     ))
     }
@@ -98,14 +113,16 @@ fn notification_init(
     sub: process.Subject(SSEMessage),
     engine_pid: process.Pid,
     self_selector: process.Selector(gen_types.UserMessage),
-    user_id: String
+    user_id: String,
+    signature: String
     ) -> Result(actor.Initialised(SSEState, SSEMessage, process.Subject(SSEMessage)), String) {
 
     let init_state = SSEState(
         self_sub: sub,
         engine_pid: engine_pid,
         self_selector: self_selector,
-        user_id: user_id
+        user_id: user_id,
+        signature: signature,
     )
 
 
@@ -115,7 +132,7 @@ fn notification_init(
     let selector = utls.create_selector(selector, selector_tag_list)
     |> process.select_map(sub, fn(msg) {msg})
 
-    utls.send_to_pid(engine_pid, #("register_notifications", self(), user_id))
+    utls.send_to_pid(engine_pid, #("register_notifications", self(), user_id, signature))
     process.send(sub, Hearbeat)
 
     let res = actor.initialised(init_state)

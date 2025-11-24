@@ -59,9 +59,9 @@ pub type ValidateError {
 }
 
 pub fn validate_request(
-    _sender_pid: process.Pid, 
+    signature: String,
     sender_uuid: String,
-    _pidmap: Dict(String, process.Pid), 
+    pubkeymap: Dict(String, String), 
     usermap: Dict(String, gen_types.User)
     ) -> Result(gen_types.User, String) {
 
@@ -75,7 +75,42 @@ pub fn validate_request(
                             }
                         )
                       )
-                Ok(user)
+        use pub_key <- result.try(
+            result.map_error(
+                dict.get(pubkeymap, user.id),
+                fn(_) {"couldnt get key for user"}
+            )
+        )
+        use _ <- result.try(
+                fn() {
+
+                    case bit_array.base16_decode(signature) {
+
+                        Ok(sig) -> {
+                            case rsa_keys.verify_message_with_pem_string(
+                                bit_array.from_string(user.id), pub_key, sig) {
+
+                                Ok(check) -> {
+
+                                    case check {
+
+                                        True -> Ok(Nil)
+
+                                        False -> Error("invalid signature")
+                                    }
+                                }
+
+                                Error(_) -> Error("invalid signature")
+                            }
+                        }
+
+                        Error(_) -> Error("invalid signature")
+                    }
+
+                }()
+            )
+            
+        Ok(user)
 }
 
 pub fn check_comment_parent(

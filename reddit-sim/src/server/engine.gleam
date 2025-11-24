@@ -97,6 +97,7 @@ fn init(
                         metrics_pid: pid,
                         votable_user_vote_map: dict.new(),
                         user_sse_pid_map: dict.new(),
+                        user_pub_key_map: dict.new(),
                      )
 
     let selector = process.new_selector() 
@@ -151,10 +152,14 @@ fn handle_engine(
         }
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.RegisterNotifications(send_pid, user_id) -> {
+        gen_types.RegisterNotifications(send_pid, user_id, signature) -> {
 
             let res = {
-                use _ <- result.try(utls.validate_request(send_pid, user_id, state.user_pid_map, state.users_data))
+                use _ <- result.try(utls.validate_request(
+                    signature,
+                    user_id,
+                    state.user_pub_key_map,
+                    state.users_data))
                 Ok(Nil)
             }
 
@@ -242,6 +247,11 @@ fn handle_engine(
                                                         pub_key: pub_key
                                                     ),
                                                  ),
+                                        user_pub_key_map: dict.insert(
+                                                    state.user_pub_key_map,
+                                                    uid,
+                                                    pub_key
+                                                    ),
                                         user_pid_map: dict.insert(
                                                     state.user_pid_map,
                                                     uid,
@@ -289,6 +299,11 @@ fn handle_engine(
                     utls.send_to_pid(send_pid, #("login_user_success", user_data.id, req_id))
                     gen_types.EngineState(
                         ..state,
+                        user_pub_key_map: dict.insert(
+                                    state.user_pub_key_map,
+                                    user_data.id,
+                                    pub_key
+                                    ),
                         user_pid_map: dict.insert(
                                         state.user_pid_map,
                                         user_data.id,
@@ -320,10 +335,14 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.CreateSubreddit(send_pid, uuid, subreddit_name, req_id) -> {
+        gen_types.CreateSubreddit(send_pid, uuid, subreddit_name, signature, req_id) -> {
 
             let res = {
-                use _ <- result.try(utls.validate_request(send_pid, uuid, state.user_pid_map, state.users_data))
+                use _ <- result.try(utls.validate_request(
+                    signature,
+                    uuid,
+                    state.user_pub_key_map,
+                    state.users_data))
                 use _ <- result.try(
                         fn() {
                         case dict.has_key(state.subreddit_rev_index, subreddit_name) {
@@ -418,14 +437,14 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.JoinSubreddit(send_pid, uuid, subreddit_id, req_id) -> {
+        gen_types.JoinSubreddit(send_pid, uuid, subreddit_id, signature, req_id) -> {
 
             let res = {
                 use gen_types.User(username: username, ..) <- result.try(
                                     utls.validate_request(
-                                    send_pid,
+                                    signature,
                                     uuid,
-                                    state.user_pid_map,
+                                    state.user_pub_key_map,
                                     state.users_data
                                     )
                                 )
@@ -501,14 +520,14 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.LeaveSubreddit(send_pid, uuid, subreddit_id, req_id) -> {
+        gen_types.LeaveSubreddit(send_pid, uuid, subreddit_id, signature, req_id) -> {
 
             let res = {
                 use gen_types.User(username: username, ..) <- result.try(
                                     utls.validate_request(
-                                    send_pid,
+                                    signature,
                                     uuid,
-                                    state.user_pid_map,
+                                    state.user_pub_key_map,
                                     state.users_data
                                     )
                                 )
@@ -589,14 +608,14 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.SearchSubreddit(send_pid, uuid, search_subreddit, req_id) -> {
+        gen_types.SearchSubreddit(send_pid, uuid, search_subreddit, signature, req_id) -> {
 
             let res = {
                 use _user <- result.try(
                                     utls.validate_request(
-                                    send_pid,
+                                    signature,
                                     uuid,
-                                    state.user_pid_map,
+                                    state.user_pub_key_map,
                                     state.users_data
                                     )
                                 )
@@ -629,14 +648,14 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.CreatePost(send_pid, uuid, subreddit_id, post_data, req_id) -> {
+        gen_types.CreatePost(send_pid, uuid, subreddit_id, post_data, signature, req_id) -> {
 
             let res = {
                 use user <- result.try(
                                     utls.validate_request(
-                                    send_pid,
+                                    signature,
                                     uuid,
-                                    state.user_pid_map,
+                                    state.user_pub_key_map,
                                     state.users_data
                                     )
                                 )
@@ -738,14 +757,14 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.CreateRepost(send_pid, uuid, post_id, signature, req_id) -> {
+        gen_types.CreateRepost(send_pid, uuid, post_id, post_signature, signature, req_id) -> {
 
             let res = {
                 use user <- result.try(
                                     utls.validate_request(
-                                    send_pid,
+                                    signature,
                                     uuid,
-                                    state.user_pid_map,
+                                    state.user_pub_key_map,
                                     state.users_data
                                     )
                                 )
@@ -768,7 +787,7 @@ fn handle_engine(
                                     owner_id: user.id,
                                     id: post_uuid,
                                     owner_name: user.username,
-                                    signature: signature
+                                    signature: post_signature
                                   )
 
                     case dict.get(state.subreddits_data, post_data.subreddit_id) {
@@ -860,14 +879,14 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.DeletePost(send_pid, uuid, post_id, req_id) -> {
+        gen_types.DeletePost(send_pid, uuid, post_id, signature, req_id) -> {
 
             let res = {
                 use user <- result.try(
                                     utls.validate_request(
-                                    send_pid,
+                                    signature,
                                     uuid,
-                                    state.user_pid_map,
+                                    state.user_pub_key_map,
                                     state.users_data
                                     )
                                 )
@@ -958,14 +977,14 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.GetPost(send_pid, uuid, post_id, req_id) -> {
+        gen_types.GetPost(send_pid, uuid, post_id, signature, req_id) -> {
 
             let res = {
                 use user <- result.try(
                                     utls.validate_request(
-                                    send_pid,
+                                    signature,
                                     uuid,
-                                    state.user_pid_map,
+                                    state.user_pub_key_map,
                                     state.users_data
                                     )
                                 )
@@ -1040,14 +1059,14 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.CreateComment(send_pid, uuid, commentable_id, comment, req_id) -> {
+        gen_types.CreateComment(send_pid, uuid, commentable_id, comment, signature, req_id) -> {
 
             let res = {
                 use user <- result.try(
                                     utls.validate_request(
-                                    send_pid,
+                                    signature,
                                     uuid,
-                                    state.user_pid_map,
+                                    state.user_pub_key_map,
                                     state.users_data
                                     )
                                 )
@@ -1148,14 +1167,14 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.CreateVote(send_pid, uuid, commentable_id, vote_t, req_id) -> {
+        gen_types.CreateVote(send_pid, uuid, commentable_id, vote_t, signature, req_id) -> {
 
             let res = {
                 use _user <- result.try(
                                     utls.validate_request(
-                                    send_pid,
+                                    signature,
                                     uuid,
-                                    state.user_pid_map,
+                                    state.user_pub_key_map,
                                     state.users_data
                                     )
                                 )
@@ -1860,14 +1879,14 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.GetFeed(send_pid, uuid, req_id) -> {
+        gen_types.GetFeed(send_pid, uuid, signature, req_id) -> {
 
             let res = {
                 use user <- result.try(
                                     utls.validate_request(
-                                    send_pid,
+                                    signature,
                                     uuid,
-                                    state.user_pid_map,
+                                    state.user_pub_key_map,
                                     state.users_data
                                     )
                                 )
@@ -1908,14 +1927,14 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.GetSubredditfeed(send_pid, uuid, subreddit_id, req_id) -> {
+        gen_types.GetSubredditfeed(send_pid, uuid, subreddit_id, signature, req_id) -> {
 
             let res = {
                 use _user <- result.try(
                                     utls.validate_request(
-                                    send_pid,
+                                    signature,
                                     uuid,
-                                    state.user_pid_map,
+                                    state.user_pub_key_map,
                                     state.users_data
                                     )
                                 )
@@ -1953,14 +1972,14 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.SearchUser(send_pid, uuid, search_user, req_id) -> {
+        gen_types.SearchUser(send_pid, uuid, search_user, signature, req_id) -> {
 
             let res = {
                 use _user <- result.try(
                                     utls.validate_request(
-                                    send_pid,
+                                    signature,
                                     uuid,
-                                    state.user_pid_map,
+                                    state.user_pub_key_map,
                                     state.users_data
                                     )
                                 )
@@ -2003,15 +2022,15 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.StartDirectmessage(send_pid, uuid, to_uuid, message, req_id) -> {
+        gen_types.StartDirectmessage(send_pid, uuid, to_uuid, message, signature, req_id) -> {
 
             io.println("[ENGINE]: recvd start dm msg username: " <> uuid)
             let res = {
                 use from_user <- result.try(
                                     utls.validate_request(
-                                    send_pid,
+                                    signature,
                                     uuid,
-                                    state.user_pid_map,
+                                    state.user_pub_key_map,
                                     state.users_data
                                     )
                                 )
@@ -2087,14 +2106,14 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.ReplyDirectmessage(send_pid, uuid, to_uuid, message, req_id) -> {
+        gen_types.ReplyDirectmessage(send_pid, uuid, to_uuid, message, signature, req_id) -> {
 
             let res = {
                 use from_user <- result.try(
                                     utls.validate_request(
-                                    send_pid,
+                                    signature,
                                     uuid,
-                                    state.user_pid_map,
+                                    state.user_pub_key_map,
                                     state.users_data
                                     )
                                 )
@@ -2189,14 +2208,14 @@ fn handle_engine(
 
 //------------------------------------------------------------------------------------------------------
 
-        gen_types.GetDirectmessages(send_pid, uuid, req_id) -> {
+        gen_types.GetDirectmessages(send_pid, uuid, signature, req_id) -> {
 
             let res = {
                 use from_user <- result.try(
                                     utls.validate_request(
-                                    send_pid,
+                                    signature,
                                     uuid,
-                                    state.user_pid_map,
+                                    state.user_pub_key_map,
                                     state.users_data
                                     )
                                 )

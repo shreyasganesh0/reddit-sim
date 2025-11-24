@@ -60,20 +60,27 @@ pub fn login_user(username: String, password: String, pub_key: String) {
     |> request.set_method(http.Post)
 }
 
-pub fn search_user(username: String, user_id: String) {
+pub fn search_user(username: String, user_id: String, signature: String) {
 
     let base_req = request.to("http://localhost:4000/api/v1/search_user?q="<>username)
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
     base_req
+    |> request.set_header(
+        "signature",
+        signature,
+    )
     |> request.set_header("authorization", user_id)
     |> request.set_method(http.Get)
 }
 
-pub fn create_subreddit(subreddit_name: String, user_id: String) {
+pub fn create_subreddit(subreddit_name: String, user_id: String, signature: String) {
 
-    let send_body = dict.from_list([#("subreddit_name", subreddit_name)])
+    let send_body = dict.from_list([
+        #("subreddit_name", subreddit_name),
+        #("signature", signature)
+        ])
     |> json.dict(function.identity, json.string)
     |> json.to_string
     |> bit_array.from_string
@@ -85,14 +92,47 @@ pub fn create_subreddit(subreddit_name: String, user_id: String) {
     
     base_req
     |> request.set_header("Content-Length", int.to_string(content_length))
+    |> request.set_header(
+        "signature",
+        signature,
+    )
     |> request.set_header("authorization", user_id)
     |> request.set_body(send_body)
     |> request.set_method(http.Post)
 }
 
-pub fn join_subreddit(subreddit_name: String, subreddit_id: String, user_id: String) {
+pub fn join_subreddit(subreddit_name: String, subreddit_id: String, user_id: String, signature: String) {
 
-    let send_body = dict.from_list([#("subreddit_id", subreddit_id)])
+    let send_body = dict.from_list([
+    #("subreddit_id", subreddit_id),
+    #("signature", signature)
+    ])
+    |> json.dict(function.identity, json.string)
+    |> json.to_string
+    |> bit_array.from_string
+
+    let content_length = bit_array.byte_size(send_body)
+    let base_req = request.to("http://localhost:4000/r/"<>subreddit_name<>"/api/subscribe")
+    |> result.unwrap(request.new())
+    |> request.map(bit_array.from_string)
+    
+    base_req
+    |> request.set_header(
+        "signature",
+        signature,
+    )
+    |> request.set_header("Content-Length", int.to_string(content_length))
+    |> request.set_header("authorization", user_id)
+    |> request.set_body(send_body)
+    |> request.set_method(http.Post)
+}
+
+pub fn leave_subreddit(subreddit_name: String, subreddit_id: String, user_id: String, signature: String) {
+
+    let send_body = dict.from_list([
+    #("subreddit_id", subreddit_id),
+    #("signature", signature)
+    ])
     |> json.dict(function.identity, json.string)
     |> json.to_string
     |> bit_array.from_string
@@ -104,49 +144,43 @@ pub fn join_subreddit(subreddit_name: String, subreddit_id: String, user_id: Str
     
     base_req
     |> request.set_header("Content-Length", int.to_string(content_length))
-    |> request.set_header("authorization", user_id)
-    |> request.set_body(send_body)
-    |> request.set_method(http.Post)
-}
-
-pub fn leave_subreddit(subreddit_name: String, subreddit_id: String, user_id: String) {
-
-    let send_body = dict.from_list([#("subreddit_id", subreddit_id)])
-    |> json.dict(function.identity, json.string)
-    |> json.to_string
-    |> bit_array.from_string
-
-    let content_length = bit_array.byte_size(send_body)
-    let base_req = request.to("http://localhost:4000/r/"<>subreddit_name<>"/api/subscribe")
-    |> result.unwrap(request.new())
-    |> request.map(bit_array.from_string)
-    
-    base_req
-    |> request.set_header("Content-Length", int.to_string(content_length))
+    |> request.set_header(
+        "signature",
+        signature,
+    )
     |> request.set_header("authorization", user_id)
     |> request.set_body(send_body)
     |> request.set_method(http.Delete)
 }
 
-pub fn search_subreddit(subreddit_name: String, user_id: String) {
+pub fn search_subreddit(subreddit_name: String, user_id: String, signature: String) {
 
     let base_req = request.to("http://localhost:4000/api/v1/search_subreddit?q="<>subreddit_name)
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
     base_req
+    |> request.set_header(
+        "signature",
+        signature,
+    )
     |> request.set_header("authorization", user_id)
     |> request.set_method(http.Get)
 }
 
 pub fn create_post(
     post: gen_types.Post,
+    signature: String
     ) {
 
     let post_body = post
     |> utls.post_jsonify
 
-    let send_body = json.object([#("subreddit_id", json.string(post.subreddit_id)), #("post", post_body)])
+    let send_body = json.object([
+    #("subreddit_id", json.string(post.subreddit_id)),
+    #("post", post_body),
+    #("signature", json.string(signature)),
+    ])
     |> json.to_string
     |> bit_array.from_string
 
@@ -156,15 +190,23 @@ pub fn create_post(
     |> request.map(bit_array.from_string)
     
     base_req
+    |> request.set_header(
+        "signature",
+        signature,
+    )
     |> request.set_header("Content-Length", int.to_string(content_length))
     |> request.set_header("authorization", post.owner_id)
     |> request.set_body(send_body)
     |> request.set_method(http.Post)
 }
 
-pub fn create_repost(post_id: String, user_id: String, sig: String) {
+pub fn create_repost(post_id: String, user_id: String, post_sig: String, signature: String) {
 
-    let send_body = dict.from_list([#("post_id", post_id), #("signature", sig)])
+    let send_body = dict.from_list(
+    [#("post_id", post_id),
+    #("post_signature", post_sig),
+    #("signature", signature)
+    ])
     |> json.dict(function.identity, json.string)
     |> json.to_string
     |> bit_array.from_string
@@ -175,35 +217,47 @@ pub fn create_repost(post_id: String, user_id: String, sig: String) {
     |> request.map(bit_array.from_string)
     
     base_req
+    |> request.set_header(
+        "signature",
+        signature,
+    )
     |> request.set_header("Content-Length", int.to_string(content_length))
     |> request.set_header("authorization", user_id)
     |> request.set_body(send_body)
     |> request.set_method(http.Post)
 }
 
-pub fn get_post(post_id: String, user_id: String) {
+pub fn get_post(post_id: String, user_id: String, signature: String) {
 
     let base_req = request.to("http://localhost:4000/api/v1/post/"<>post_id)
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
     base_req
+    |> request.set_header(
+        "signature",
+        signature,
+    )
     |> request.set_header("authorization", user_id)
     |> request.set_method(http.Get)
 }
 
-pub fn delete_post(post_id: String, user_id: String) {
+pub fn delete_post(post_id: String, user_id: String, signature: String) {
 
     let base_req = request.to("http://localhost:4000/api/v1/post/"<>post_id)
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
     base_req
+    |> request.set_header(
+        "signature",
+        signature,
+    )
     |> request.set_header("authorization", user_id)
     |> request.set_method(http.Delete)
 }
 
-pub fn create_comment(parent_id: String, user_id: String, body: String) {
+pub fn create_comment(parent_id: String, user_id: String, body: String, signature: String) {
 
     let comment_body =
         gen_types.Comment(
@@ -216,7 +270,11 @@ pub fn create_comment(parent_id: String, user_id: String, body: String) {
     )
     |> utls.comment_jsonify
 
-    let send_body = json.object([#("commentable_id", json.string(parent_id)), #("comment", comment_body)])
+    let send_body = json.object(
+    [#("commentable_id", json.string(parent_id)),
+    #("comment", comment_body),
+    #("signature", json.string(signature))
+    ])
     |> json.to_string
     |> bit_array.from_string
 
@@ -226,18 +284,23 @@ pub fn create_comment(parent_id: String, user_id: String, body: String) {
     |> request.map(bit_array.from_string)
     
     base_req
+    |> request.set_header(
+        "signature",
+        signature,
+    )
     |> request.set_header("Content-Length", int.to_string(content_length))
     |> request.set_header("authorization", user_id)
     |> request.set_body(send_body)
     |> request.set_method(http.Post)
 }
 
-pub fn create_vote(parent_id: String, user_id: String, vote_t: String) {
+pub fn create_vote(parent_id: String, user_id: String, vote_t: String, signature: String) {
 
     let send_body = json.object(
         [
         #("commentable_id", json.string(parent_id)),
-        #("vote_type", json.string(vote_t))
+        #("vote_type", json.string(vote_t)),
+        #("signature", json.string(signature))
         ]
     )
     |> json.to_string
@@ -249,40 +312,53 @@ pub fn create_vote(parent_id: String, user_id: String, vote_t: String) {
     |> request.map(bit_array.from_string)
     
     base_req
+    |> request.set_header(
+        "signature",
+        signature,
+    )
     |> request.set_header("Content-Length", int.to_string(content_length))
     |> request.set_header("authorization", user_id)
     |> request.set_body(send_body)
     |> request.set_method(http.Post)
 }
 
-pub fn get_feed(user_id: String) {
+pub fn get_feed(user_id: String, signature: String) {
 
     let base_req = request.to("http://localhost:4000/api/v1/feed")
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
     base_req
+    |> request.set_header(
+        "signature",
+        signature,
+    )
     |> request.set_header("authorization", user_id)
     |> request.set_method(http.Get)
 }
 
-pub fn get_subredditfeed(subreddit_id: String, user_id: String) {
+pub fn get_subredditfeed(subreddit_id: String, user_id: String, signature: String) {
 
     let base_req = request.to("http://localhost:4000/r/"<>subreddit_id<>"/api/posts")
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
     base_req
+    |> request.set_header(
+        "signature",
+        signature,
+    )
     |> request.set_header("authorization", user_id)
     |> request.set_method(http.Get)
 }
 
-pub fn start_directmessage(to_send_id: String, user_id: String, message: String) {
+pub fn start_directmessage(to_send_id: String, user_id: String, message: String, signature: String) {
 
     let send_body = json.object(
         [
         #("recipient_uuid", json.string(to_send_id)),
         #("message", json.string(message)),
+        #("signature", json.string(signature))
         ]
     )
     |> json.to_string
@@ -294,18 +370,23 @@ pub fn start_directmessage(to_send_id: String, user_id: String, message: String)
     |> request.map(bit_array.from_string)
     
     base_req
+    |> request.set_header(
+        "signature",
+        signature,
+    )
     |> request.set_header("Content-Length", int.to_string(content_length))
     |> request.set_header("authorization", user_id)
     |> request.set_body(send_body)
     |> request.set_method(http.Post)
 }
 
-pub fn reply_directmessage(to_user_id: String, user_id: String, message: String) {
+pub fn reply_directmessage(to_user_id: String, user_id: String, message: String, signature: String) {
 
     let send_body = json.object(
         [
         #("to_user_id", json.string(to_user_id)),
         #("message", json.string(message)),
+        #("signature", json.string(signature))
         ]
     )
     |> json.to_string
@@ -317,30 +398,42 @@ pub fn reply_directmessage(to_user_id: String, user_id: String, message: String)
     |> request.map(bit_array.from_string)
     
     base_req
+    |> request.set_header(
+        "signature",
+        signature,
+    )
     |> request.set_header("Content-Length", int.to_string(content_length))
     |> request.set_header("authorization", user_id)
     |> request.set_body(send_body)
     |> request.set_method(http.Post)
 }
 
-pub fn get_directmessages(user_id: String) {
+pub fn get_directmessages(user_id: String, signature: String) {
 
     let base_req = request.to("http://localhost:4000/api/v1/dm")
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
     base_req
+    |> request.set_header(
+        "signature",
+        signature,
+    )
     |> request.set_header("authorization", user_id)
     |> request.set_method(http.Get)
 }
 
-pub fn register_notifications(user_id: String) {
+pub fn register_notifications(user_id: String, signature: String) {
 
     let base_req = request.to("http://localhost:4000/api/v1/notification")
     |> result.unwrap(request.new())
     |> request.map(bytes_tree.from_string)
     
     base_req
+    |> request.set_header(
+        "signature",
+        signature
+    )
     |> request.set_header("authorization", user_id)
     |> request.set_method(http.Get)
 }

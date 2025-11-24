@@ -300,9 +300,23 @@ pub fn search_subreddit(
             }
         )
     )
+    use sig <- result.try(
+        result.map_error(
+            request.get_header(req, "signature"),
+            fn(_) {
+
+                    response.new(401)
+                    |>response.set_body(
+                        bytes_tree.new()
+                        |>bytes_tree.append(bit_array.from_string("Unauthorized"))
+                    )
+
+            }
+        )
+    )
 
 
-    #("search_subreddit", self(), user_id, search_subreddit, "") 
+    #("search_subreddit", self(), user_id, search_subreddit, sig, "") 
     |> utls.send_to_pid(engine_pid, _)
 
     use resp_ans <- result.try(
@@ -425,9 +439,23 @@ pub fn search_user(
             }
         )
     )
+    use sig <- result.try(
+        result.map_error(
+            request.get_header(req, "signature"),
+            fn(_) {
+
+                    response.new(401)
+                    |>response.set_body(
+                        bytes_tree.new()
+                        |>bytes_tree.append(bit_array.from_string("Unauthorized"))
+                    )
+
+            }
+        )
+    )
 
 
-    #("search_user", self(), user_id, search_user, "") 
+    #("search_user", self(), user_id, search_user, sig, "") 
     |> utls.send_to_pid(engine_pid, _)
 
     use resp_ans <- result.try(
@@ -498,7 +526,7 @@ pub fn create_subreddit(
     {
     use req_bytes <- result.try(
         result.map_error(
-        mist.read_body(req, 1024 * 1024), 
+        mist.read_body(req, 8 * 1024 * 1024), 
         fn (_) {
 
             response.new(400)
@@ -533,9 +561,9 @@ pub fn create_subreddit(
     )
 
 
-    let assert gen_types.RestCreateSubreddit(subreddit_name) = req_parsed
+    let assert gen_types.RestCreateSubreddit(subreddit_name, sig) = req_parsed
 
-    #("create_subreddit", self(), user_id, subreddit_name, "") 
+    #("create_subreddit", self(), user_id, subreddit_name, sig, "") 
     |> utls.send_to_pid(engine_pid, _)
 
     use resp_ans <- result.try(
@@ -603,7 +631,7 @@ pub fn join_subreddit(
     {
     use req_bytes <- result.try(
         result.map_error(
-        mist.read_body(req, 1024 * 1024), 
+        mist.read_body(req, 8 * 1024 * 1024), 
         fn (_) {
 
                 response.new(400)
@@ -637,10 +665,9 @@ pub fn join_subreddit(
         )
     )
 
+    let assert gen_types.RestJoinSubreddit(subreddit_id, sig) = req_parsed
 
-    let assert gen_types.RestJoinSubreddit(subreddit_id) = req_parsed
-
-    #("join_subreddit", self(), user_id, subreddit_id, "") 
+    #("join_subreddit", self(), user_id, subreddit_id, sig, "") 
     |> utls.send_to_pid(engine_pid, _)
 
     use resp_ans <- result.try(
@@ -723,8 +750,22 @@ pub fn leave_subreddit(
             }
         )
     )
+    use sig <- result.try(
+        result.map_error(
+            request.get_header(req, "signature"),
+            fn(_) {
 
-    #("leave_subreddit", self(), user_id, subreddit_id, "") 
+                    response.new(401)
+                    |>response.set_body(
+                        bytes_tree.new()
+                        |>bytes_tree.append(bit_array.from_string("Unauthorized"))
+                    )
+
+            }
+        )
+    )
+
+    #("leave_subreddit", self(), user_id, subreddit_id, sig, "") 
     |> utls.send_to_pid(engine_pid, _)
 
     use resp_ans <- result.try(
@@ -827,10 +868,10 @@ pub fn create_post(
     )
 
 
-    let assert gen_types.RestCreatePost(subreddit_id, post) = req_parsed
+    let assert gen_types.RestCreatePost(subreddit_id, post, sig) = req_parsed
     let post = post |> gen_decode.post_serializer
 
-    #("create_post", self(), user_id, subreddit_id, post, "") 
+    #("create_post", self(), user_id, subreddit_id, post, sig, "") 
     |> utls.send_to_pid(engine_pid, _)
 
     use resp_ans <- result.try(
@@ -933,9 +974,9 @@ pub fn create_repost(
     )
 
 
-    let assert gen_types.RestCreateRepost(post_id, sig_str) = req_parsed
+    let assert gen_types.RestCreateRepost(post_id, post_sig, sig) = req_parsed
 
-    #("create_repost", self(), user_id, post_id, sig_str, "") 
+    #("create_repost", self(), user_id, post_id, post_sig, sig, "") 
     |> utls.send_to_pid(engine_pid, _)
 
     use resp_ans <- result.try(
@@ -1015,8 +1056,22 @@ pub fn delete_post(
             }
         )
     )
+    use sig <- result.try(
+        result.map_error(
+            request.get_header(req, "signature"),
+            fn(_) {
 
-    #("delete_post", self(), user_id, post_id, "") 
+                    response.new(401)
+                    |>response.set_body(
+                        bytes_tree.new()
+                        |>bytes_tree.append(bit_array.from_string("Unauthorized"))
+                    )
+
+            }
+        )
+    )
+
+    #("delete_post", self(), user_id, post_id, sig, "") 
     |> utls.send_to_pid(engine_pid, _)
 
     use resp_ans <- result.try(
@@ -1096,8 +1151,22 @@ pub fn get_post(
             }
         )
     )
+    use sig <- result.try(
+        result.map_error(
+            request.get_header(req, "signature"),
+            fn(_) {
 
-    #("get_post", self(), user_id, post_id, "") 
+                    response.new(401)
+                    |>response.set_body(
+                        bytes_tree.new()
+                        |>bytes_tree.append(bit_array.from_string("Unauthorized"))
+                    )
+
+            }
+        )
+    )
+
+    #("get_post", self(), user_id, post_id, sig, "") 
     |> utls.send_to_pid(engine_pid, _)
 
     use resp_ans <- result.try(
@@ -1205,9 +1274,9 @@ pub fn create_comment(
     )
 
     
-    let assert gen_types.RestCreateComment(parent_id, body) = req_parsed
+    let assert gen_types.RestCreateComment(parent_id, body, sig) = req_parsed
     let body = body |> gen_decode.comment_serializer
-    #("create_comment", self(), user_id, parent_id, body, "") 
+    #("create_comment", self(), user_id, parent_id, body, sig, "") 
     |> utls.send_to_pid(engine_pid, _)
 
     use resp_ans <- result.try(
@@ -1313,8 +1382,8 @@ pub fn create_vote(
     )
 
     
-    let assert gen_types.RestCreateVote(parent_id, vote_t) = req_parsed
-    #("create_vote", self(), user_id, parent_id, vote_t, "") 
+    let assert gen_types.RestCreateVote(parent_id, vote_t, sig) = req_parsed
+    #("create_vote", self(), user_id, parent_id, vote_t, sig, "") 
     |> utls.send_to_pid(engine_pid, _)
 
     use resp_ans <- result.try(
@@ -1394,8 +1463,22 @@ pub fn get_feed(
             }
         )
     )
+    use sig <- result.try(
+        result.map_error(
+            request.get_header(req, "signature"),
+            fn(_) {
 
-    #("get_feed", self(), user_id, "") 
+                    response.new(401)
+                    |>response.set_body(
+                        bytes_tree.new()
+                        |>bytes_tree.append(bit_array.from_string("Unauthorized"))
+                    )
+
+            }
+        )
+    )
+
+    #("get_feed", self(), user_id, sig, "") 
     |> utls.send_to_pid(engine_pid, _)
 
     use resp_ans <- result.try(
@@ -1477,8 +1560,22 @@ pub fn get_subredditfeed(
             }
         )
     )
+    use sig <- result.try(
+        result.map_error(
+            request.get_header(req, "signature"),
+            fn(_) {
 
-    #("get_subredditfeed", self(), user_id, subreddit_id, "") 
+                    response.new(401)
+                    |>response.set_body(
+                        bytes_tree.new()
+                        |>bytes_tree.append(bit_array.from_string("Unauthorized"))
+                    )
+
+            }
+        )
+    )
+
+    #("get_subredditfeed", self(), user_id, subreddit_id, sig, "") 
     |> utls.send_to_pid(engine_pid, _)
 
     use resp_ans <- result.try(
@@ -1584,8 +1681,8 @@ pub fn start_directmessage(
         )
     )
 
-    let assert gen_types.RestStartDirectmessage(send_user_id, message) = req_parsed
-    #("start_directmessage", self(), user_id, send_user_id, message, "") 
+    let assert gen_types.RestStartDirectmessage(send_user_id, message, sig) = req_parsed
+    #("start_directmessage", self(), user_id, send_user_id, message, sig, "") 
     |> utls.send_to_pid(engine_pid, _)
 
     use resp_ans <- result.try(
@@ -1691,8 +1788,8 @@ pub fn reply_directmessage(
         )
     )
 
-    let assert gen_types.RestReplyDirectmessage(to_user_id, message) = req_parsed
-    #("reply_directmessage", self(), user_id, to_user_id, message, "") 
+    let assert gen_types.RestReplyDirectmessage(to_user_id, message, sig) = req_parsed
+    #("reply_directmessage", self(), user_id, to_user_id, message, sig, "") 
     |> utls.send_to_pid(engine_pid, _)
 
     use resp_ans <- result.try(
@@ -1773,8 +1870,22 @@ pub fn get_directmessages(
             }
         )
     )
+    use sig <- result.try(
+        result.map_error(
+            request.get_header(req, "signature"),
+            fn(_) {
 
-    #("get_directmessages", self(), user_id, "") 
+                    response.new(401)
+                    |>response.set_body(
+                        bytes_tree.new()
+                        |>bytes_tree.append(bit_array.from_string("Unauthorized"))
+                    )
+
+            }
+        )
+    )
+
+    #("get_directmessages", self(), user_id, sig, "") 
     |> utls.send_to_pid(engine_pid, _)
 
     use resp_ans <- result.try(

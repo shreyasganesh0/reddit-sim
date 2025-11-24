@@ -1,4 +1,6 @@
 import gleam/io
+import gleam/int
+import gleam/string
 import gleam/http/response
 import gleam/json
 import gleam/dict.{type Dict}
@@ -34,7 +36,8 @@ pub type ReplState {
         priv_key: String,
         pub_key: String,
         pub_key_map: Dict(String, String),
-        posts_data: Dict(String, gen_types.Post)
+        posts_data: Dict(String, gen_types.Post),
+        signature: String
     )
 }
 
@@ -44,11 +47,23 @@ pub fn register_user(resp: response.Response(BitArray), state: ReplState) -> Rep
 
         Ok(gen_types.RestRegisterUserSuccess(user_id)) -> {
 
-            io.println("[CLIENT]: registered with id "<>user_id)
-            ReplState(
-                ..state,
-                user_id: user_id,
-            )
+            case rsa_keys.sign_message_with_pem_string(bit_array.from_string(user_id), state.priv_key) {
+
+                Ok(sig) -> {
+
+                    io.println("[CLIENT]: registered with id "<>user_id)
+                    ReplState(
+                        ..state,
+                        user_id: user_id,
+                        signature: sig|>bit_array.base16_encode
+                    )
+                }
+
+                Error(_) -> {
+                    io.println("[CLIENT]: failed to sign id, register again"<>user_id)
+                    state
+                }
+            } 
         }
 
         _ -> {
@@ -65,11 +80,23 @@ pub fn login_user(resp: response.Response(BitArray), state: ReplState) -> ReplSt
 
         Ok(gen_types.RestLoginUserSuccess(user_id)) -> {
 
-            io.println("[CLIENT]: login with id "<>user_id)
-            ReplState(
-                ..state,
-                user_id: user_id,
-            )
+            case rsa_keys.sign_message_with_pem_string(bit_array.from_string(user_id), state.priv_key) {
+
+                Ok(sig) -> {
+
+                    io.println("[CLIENT]: registered with id "<>user_id)
+                    ReplState(
+                        ..state,
+                        user_id: user_id,
+                        signature: sig|>bit_array.base16_encode
+                    )
+                }
+
+                Error(_) -> {
+                    io.println("[CLIENT]: failed to sign id, register again"<>user_id)
+                    state
+                }
+            } 
         }
 
         _ -> {
@@ -574,6 +601,7 @@ pub fn get_directmessages(resp: response.Response(BitArray), state: ReplState) -
 
 
             io.println("[CLIENT]: got dms")
+            list.each(dms, print_dm)
             let new_state = ReplState(
                 ..state,
                 user_dm_map: list.fold(
@@ -628,7 +656,7 @@ pub fn get_directmessages(resp: response.Response(BitArray), state: ReplState) -
 
 pub fn register_notifications(_resp: response.Response(BitArray), state: ReplState) -> ReplState {
 
-    let req = request_builders.register_notifications(state.user_id)
+    let req = request_builders.register_notifications(state.user_id, state.signature)
 
     process.spawn(fn(){
         let _ = client_sse.start(req)
@@ -638,6 +666,48 @@ pub fn register_notifications(_resp: response.Response(BitArray), state: ReplSta
     state
 }
 
+pub fn help(_resp: response.Response(BitArray), state: ReplState) -> ReplState {
+
+    io.println("\n--- AVAILABLE COMMANDS ---")
+    
+    io.println("Authentication:")
+    io.println("  register <username> <password>")
+    io.println("  login <username> <password>")
+    io.println("  logout")
+
+    io.println("\nUser & System:")
+    io.println("  search-user <username>")
+    io.println("  notifications")
+
+    io.println("\nSubreddits:")
+    io.println("  create-subreddit <subreddit_name>")
+    io.println("  join-subreddit <subreddit_name>")
+    io.println("  leave-subreddit <subreddit_name>")
+    io.println("  search-subreddit <subreddit_name>")
+    io.println("  get-subredditfeed <subreddit_name>")
+
+    io.println("\nPosts:")
+    io.println("  create-post --subreddit-name <name> --title <title> --body <body>")
+    io.println("  repost <post_id>")
+    io.println("  get-post <post_id>")
+    io.println("  delete-post <post_id>")
+    io.println("  get-feed")
+
+    io.println("\nInteraction:")
+    io.println("  create-comment --parent-id <post_or_comment_id> --body <body>")
+    io.println("  upvote <parent_id>")
+    io.println("  downvote <parent_id>")
+    io.println("  unvote <parent_id>")
+
+    io.println("\nDirect Messages:")
+    io.println("  send-dm --to <username> --message <message>")
+    io.println("  reply-dm --to <username> --message <message>")
+    io.println("  get-dms")
+    
+    io.println("--------------------------\n")
+
+    state
+}
 type VerifyError {
 
     SignatureDecodeFail
@@ -679,34 +749,67 @@ fn verify_post(post: gen_types.Post, state: ReplState) {
     }
 }
 
+fn print_post(post: gen_types.Post) {
+    let votes = int.to_string(post.upvotes - post.downvotes)
+  
+    io.println("\n================ [ POST ] ================")
+    io.println("TITLE:    " <> post.title)
+    io.println("ID:       " <> post.id) 
+    io.println("AUTHOR:   " <> post.owner_name <> " (ID: " <> post.owner_id <> ")")
+    io.println("SUBREDDIT:" <> post.subreddit_id)
+    io.println("SCORE:    " <> votes <> " (+" <> int.to_string(post.upvotes) <> "|-" <> int.to_string(post.downvotes) <> ")")
+    io.println("------------------------------------------")
+    io.println(post.body)
+    io.println("==========================================\n")
+}
+
+fn print_comment(comment: gen_types.Comment) {
+
+    let votes = int.to_string(comment.upvotes - comment.downvotes)
+
+    io.println("\n---------------- [ COMMENT ] ---------------")
+    io.println("ID:       " <> comment.id) 
+
+    io.println("AUTHOR ID:" <> comment.owner_id) 
+    io.println("PARENT ID:" <> comment.parent_id)
+
+    io.println("SCORE:    " <> votes <> " (+" <> int.to_string(comment.upvotes) <> "|-" <> int.to_string(comment.downvotes) <> ")")
+    io.println("BODY:")
+    io.println("\t" <> comment.body)
+    io.println("--------------------------------------------\n")
+} 
+
+fn print_dm(dm: gen_types.Dm) {
+
+    let participants_str = list.zip(dm.usernames, dm.participants)
+    |> list.map(fn(pair) {
+      let #(name, id) = pair
+      name <> " (" <> id <> ")"
+    })
+    |> string.join(", ")
+
+    io.println("\n================ [ DM ] ==================")
+    io.println("DM ID:        " <> dm.id)
+    io.println("PARTICIPANTS: " <> participants_str)
+    io.println("------------------------------------------")
+    io.println("MESSAGES:")
+
+    list.each(dm.msgs_list, fn(msg) {
+    io.println(" > " <> msg)
+    })
+    io.println("==========================================\n")
+}
+
 fn display_post(post: gen_types.Post, comments: List(gen_types.Comment)) {
 
-    let gen_types.Post(title: title, body: body, subreddit_id: subreddit_id, ..) = post
-
-    io.println("SUBREDDIT: "<>subreddit_id<>"\n")
-    io.println("--------------------------------------------------------\n")
-    io.println("TITLE: "<>title<>"\n")
-    io.println("\n--------------------------------------------------------\n")
-    io.println("BODY:\n\t"<>body)
-    io.println("--------------------------------------------------------\n\n")
-
+    print_post(post)
     case list.length(comments) {
 
         0 -> {Nil}
 
         _ -> {
             io.println("COMMENTS:\n")
-            list.each(
-                comments,
-                fn(a) {
-
-                    let gen_types.Comment(body: body, ..) = a
-
-                    io.println("--------------------------------------------------------\n")
-                    io.println("BODY:\n\t"<>body)
-                    io.println("--------------------------------------------------------\n\n")
-                }
-            )
+            list.each(comments, print_comment)
         }
     }
 }

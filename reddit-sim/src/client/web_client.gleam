@@ -40,6 +40,8 @@ type ReplError {
 
     SignPostFailedError(err: String)
     
+    SignIdFailError(err: String)
+    
     PostDoesntExistError
 }
 
@@ -55,7 +57,20 @@ fn start_repl(state: response_handlers.ReplState) {
 
             "logout"-> {
 
-                Ok(#(response.new(200)|>response.map(bit_array.from_string), response_handlers.logout, state))
+                Ok(
+                #(response.new(200)|>response.map(bit_array.from_string),
+                response_handlers.logout,
+                state)
+                )
+            }
+
+            "help" -> {
+
+                Ok(
+                #(response.new(200)|>response.map(bit_array.from_string),
+                response_handlers.help,
+                state)
+                )
             }
 
             "notifications" -> {
@@ -146,6 +161,10 @@ fn start_repl(state: response_handlers.ReplState) {
                     io.println("[CLIENT]: failed to create a valid signature for post: "<> err)
                 }
                 
+                SignIdFailError(err) -> {
+
+                    io.println("[CLIENT]: failed to create a valid signature for id: "<> err)
+                }
                 PostDoesntExistError -> {
 
                     io.println("[CLIENT]: trying to repost invaild post id")
@@ -248,7 +267,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                             )
                             Ok(
                                 #(
-                                request_builders.search_user(username, user_id),
+                                request_builders.search_user(username, user_id, state.signature),
                                 response_handlers.search_user,
                                 new_state,
                                 )
@@ -283,7 +302,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
 
                             Ok(
                                 #(
-                                request_builders.create_subreddit(subreddit_name, user_id),
+                                request_builders.create_subreddit(subreddit_name, user_id, state.signature),
                                 response_handlers.create_subreddit,
                                 new_state
                                 )
@@ -316,10 +335,9 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                                     fn(_) {SubredditUnknownError}
                                 )
                             )
-
                             Ok(
                                 #(
-                                request_builders.join_subreddit(subreddit_name, subreddit_id, user_id),
+                                request_builders.join_subreddit(subreddit_name, subreddit_id, user_id, state.signature),
                                 response_handlers.join_subreddit,
                                 state
                                 )
@@ -353,7 +371,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                             )
                             Ok(
                                 #(
-                                request_builders.search_subreddit(subreddit_name, user_id),
+                                request_builders.search_subreddit(subreddit_name, user_id, state.signature),
                                 response_handlers.search_subreddit,
                                 new_state
                                 )
@@ -380,16 +398,16 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                                     }
                                 }()
                             )
-
                             use subreddit_id <- result.try(
                                 result.map_error(
                                     dict.get(state.subreddit_rev_index, subreddit_name),
                                     fn(_) {SubredditUnknownError}
                                 )
                             )
+
                             Ok(
                                 #(
-                                request_builders.leave_subreddit(subreddit_name, subreddit_id, user_id),
+                                request_builders.leave_subreddit(subreddit_name, subreddit_id, user_id, state.signature),
                                 response_handlers.leave_subreddit,
                                 state
                                 )
@@ -433,7 +451,6 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                                     }
                                 }()
                             )
-
                             use post <- result.try(
                                 fn() {
 
@@ -454,7 +471,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
 
                                             Ok(gen_types.Post(
                                                 ..post,
-                                                signature: sig|>bit_array.base16_encode,
+                                                signature: sig|>bit_array.base16_encode, 
                                             ))
                                         }
 
@@ -468,7 +485,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
 
                             Ok(
                                 #(
-                                request_builders.create_post(post),
+                                request_builders.create_post(post, state.signature),
                                 response_handlers.create_post,
                                 state
                                 )
@@ -501,7 +518,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                                     fn(_) {PostDoesntExistError}
                                 )
                             )
-                            use sig <- result.try(
+                            use post_sig <- result.try(
                                 result.map_error(
                                     utls.get_post_sig(post, state.priv_key),
                                     fn(err) {SignPostFailedError(err)}
@@ -510,7 +527,10 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                             Ok(
                                 #(
                                 request_builders.create_repost(
-                                    post_id, user_id, sig|>bit_array.base16_encode
+                                    post_id, 
+                                    user_id,
+                                    post_sig|>bit_array.base16_encode,
+                                    state.signature
                                 ),
                                 response_handlers.create_repost,
                                 state
@@ -538,10 +558,9 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                                     }
                                 }()
                             )
-
                             Ok(
                                 #(
-                                request_builders.delete_post(post_id, user_id),
+                                request_builders.delete_post(post_id, user_id, state.signature),
                                 response_handlers.delete_post,
                                 state
                                 )
@@ -571,7 +590,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
 
                             Ok(
                                 #(
-                                request_builders.get_post(post_id, user_id),
+                                request_builders.get_post(post_id, user_id, state.signature),
                                 response_handlers.get_post,
                                 state
                                 )
@@ -622,7 +641,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
 
                             Ok(
                                 #(
-                                request_builders.create_comment(parent_id, user_id, body),
+                                request_builders.create_comment(parent_id, user_id, body, state.signature),
                                 response_handlers.create_comment,
                                 state
                                 )
@@ -673,7 +692,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
 
                             Ok(
                                 #(
-                                request_builders.create_vote(parent_id, user_id, "down"),
+                                request_builders.create_vote(parent_id, user_id, "down", state.signature),
                                 response_handlers.create_vote,
                                 state
                                 )
@@ -723,7 +742,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
 
                             Ok(
                                 #(
-                                request_builders.create_vote(parent_id, user_id, "up"),
+                                request_builders.create_vote(parent_id, user_id, "up", state.signature),
                                 response_handlers.create_vote,
                                 state
                                 )
@@ -773,7 +792,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
 
                             Ok(
                                 #(
-                                request_builders.create_vote(parent_id, user_id, "remove"),
+                                request_builders.create_vote(parent_id, user_id, "remove", state.signature),
                                 response_handlers.create_vote,
                                 state
                                 )
@@ -801,7 +820,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                             )
                             Ok(
                                 #(
-                                request_builders.get_feed(user_id),
+                                request_builders.get_feed(user_id, state.signature),
                                 response_handlers.get_feed,
                                 state
                                 )
@@ -815,7 +834,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
 
                     case rest {
 
-                        ["--subreddit-name", subreddit_name] -> {
+                        [subreddit_name] -> {
 
                             use user_id <- result.try(
                                 fn() {
@@ -835,7 +854,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                             )
                             Ok(
                                 #(
-                                request_builders.get_subredditfeed(subreddit_id, user_id),
+                                request_builders.get_subredditfeed(subreddit_id, user_id, state.signature),
                                 response_handlers.get_subredditfeed,
                                 state
                                 )
@@ -883,7 +902,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                             )
                             Ok(
                                 #(
-                                request_builders.start_directmessage(to_send_id, user_id, msg),
+                                request_builders.start_directmessage(to_send_id, user_id, msg, state.signature),
                                 response_handlers.start_directmessage,
                                 new_state
                                 )
@@ -921,7 +940,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                             )
                             Ok(
                                 #(
-                                request_builders.reply_directmessage(to_send_id, user_id, msg),
+                                request_builders.reply_directmessage(to_send_id, user_id, msg, state.signature),
                                 response_handlers.reply_directmessage,
                                 new_state
                                 )
@@ -945,7 +964,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                     )
                     Ok(
                         #(
-                        request_builders.get_directmessages(user_id),
+                        request_builders.get_directmessages(user_id, state.signature),
                         response_handlers.get_directmessages,
                         state
                         )
@@ -979,9 +998,9 @@ pub fn main() {
                         priv_key: "",
                         pub_key: "",
                         pub_key_map: dict.new(),
-                        posts_data: dict.new()
+                        posts_data: dict.new(),
+                        signature: "",
                     )
     start_repl(init_state)
 }
-
 
