@@ -1,0 +1,2039 @@
+diff --git a/reddit-sim/src/client/client_sse.gleam b/reddit-sim/src/client/client_sse.gleam
+index 968481f..c1d1d91 100644
+--- a/reddit-sim/src/client/client_sse.gleam
++++ b/reddit-sim/src/client/client_sse.gleam
+@@ -12,15 +12,17 @@ type ClientSSEState {
+     ClientSSEState(
+         self_sub: process.Subject(sse.SSEEvent),
+         close_handler_sub: process.Subject(sse.SSEManagerMessage),
+-        mgr: hackney.ClientRef
++        mgr: hackney.ClientRef,
++        main_sub: process.Subject(Nil),
+     )
+ }
+ 
+ pub fn start(
+     req: request.Request(bytes_tree.BytesTree),
++    main_sub: process.Subject(Nil),
+     ) {
+ 
+-    actor.new_with_initialiser(10000, fn(sub) {init(sub, req)})
++    actor.new_with_initialiser(10000, fn(sub) {init(sub, req, main_sub)})
+     |> actor.on_message(handle_client_sse)
+     |> actor.start
+ }
+@@ -28,6 +30,7 @@ pub fn start(
+ fn init(
+     sub: process.Subject(sse.SSEEvent),
+     req: request.Request(bytes_tree.BytesTree),
++    main_sub: process.Subject(Nil),
+     ) {
+ 
+     case sse.event_source(req, 100000, sub) {
+@@ -38,7 +41,8 @@ fn init(
+             let init_state = ClientSSEState(
+                 self_sub: sub,
+                 close_handler_sub: close_handler_sub,
+-                mgr: mgr
++                mgr: mgr,
++                main_sub: main_sub
+             )
+ 
+             Ok(actor.initialised(init_state))
+@@ -73,6 +77,7 @@ fn handle_client_sse(
+         sse.Closed -> {
+ 
+             io.println("[NOTIFICATION]: recvd close")
++            process.send(state.main_sub, Nil)
+             actor.stop()
+         }
+     }
+diff --git a/reddit-sim/src/client/response_handlers.gleam b/reddit-sim/src/client/response_handlers.gleam
+index d6bf3d5..66ea25e 100644
+--- a/reddit-sim/src/client/response_handlers.gleam
++++ b/reddit-sim/src/client/response_handlers.gleam
+@@ -658,10 +658,13 @@ pub fn register_notifications(_resp: response.Response(BitArray), state: ReplSta
+ 
+     let req = request_builders.register_notifications(state.user_id, state.signature)
+ 
+-    process.spawn(fn(){
+-        let _ = client_sse.start(req)
+-        process.sleep_forever()
+-        })
++    process.spawn(
++        fn(){
++            let main_sub = process.new_subject()
++            let _ = client_sse.start(req, main_sub)
++            process.receive_forever(main_sub)
++        }
++    )
+ 
+     state
+ }
+diff --git a/reddit-sim/src/client/users.gleam b/reddit-sim/src/client/users.gleam
+index 6fb4ea8..c61e19d 100644
+--- a/reddit-sim/src/client/users.gleam
++++ b/reddit-sim/src/client/users.gleam
+@@ -3,6 +3,7 @@ import gleam/int
+ import gleam/float
+ import gleam/list
+ import gleam/string
++import gleam/bit_array
+ import gleam/dict
+ import gleam/dynamic/decode
+ import gleam/dynamic
+@@ -32,29 +33,21 @@ fn global_whereisname(name: atom.Atom) -> dynamic.Dynamic
+ @external(erlang, "erlang", "self")
+ fn self() -> process.Pid
+ 
+-pub fn create(mode: String, num_users: Int, run_time: Int) -> Nil {
++pub fn create(
++    metrics_ip: String,
++    engine_ip: String,
++    num_users: Int,
++    run_time: Int,
++    _self_ip: String,
++    ) -> Nil {
+ 
+     let main_sub = process.new_subject()
+     let engine_atom = atom.create("engine")
+-    let engine_node = atom.create("engine@localhost")
++    let engine_node = atom.create("engine@"<>engine_ip)
+     let metrics_atom = atom.create("metrics")
+-    let metrics_node = atom.create("metrics@localhost")
+-
+-    let cdf = case mode == "simulator" {
+-        True -> {
+-            let n = 100
+-            let cdf = zipf.create_cdf(n)
+-
+-            //let _ = injector.start_injection(sub_list)
+-            cdf
+-        }
+-
+-        False -> {
+-
+-            []
+-        }
+-    }
++    let metrics_node = atom.create("metrics@"<>metrics_ip)
+ 
++    let cdf = zipf.create_cdf(100)
+     let ninetyp = {num_users * 90} / 100 
+     let one = {num_users * 1} / 100 
+     let onep = case one { 
+@@ -66,88 +59,80 @@ pub fn create(mode: String, num_users: Int, run_time: Int) -> Nil {
+     let sub_list = dict.new()
+     let builder = supervisor.new(supervisor.OneForOne)
+     let #(builder, sub_list) = list.range(1, num_users) 
+-    |> list.fold(#(builder, sub_list), fn(acc, a) {
++    |> list.fold(
++        #(builder, sub_list),
++        fn(acc, a) {
+ 
+-                            let #(build, subs) = acc
+-                            let role = case a <= onep {
++            let #(build, subs) = acc
++            let role = case a <= onep {
+ 
+-                                True -> "creator"
++                True -> "creator"
+ 
+-                                False -> {
++                False -> {
+ 
+-                                    case a < ninetyp + onep {
++                    case a < ninetyp + onep {
+ 
+-                                        True -> "lurker"
++                        True -> "lurker"
+ 
+-                                        False -> "contributor"
+-                                    }
+-                                }
+-                            }
++                        False -> "contributor"
++                    }
++                }
++            }
+ 
+-                            let res = start(a, engine_atom, engine_node, metrics_atom, metrics_node, cdf, main_sub, role)
++            let res = start(a, engine_atom, engine_node, metrics_atom, metrics_node, cdf, main_sub, role)
+ 
+-                            let assert Ok(sub) = res
+-                            #(
+-                                supervisor.add(
+-                                    build,
+-                                    supervision.worker(fn() {res})
+-                                    |> supervision.restart(supervision.Transient)
+-                                ), 
+-                                dict.insert(subs, a - 1, sub.data)
+-                            )
+-                          }
++            let assert Ok(sub) = res
++            #(
++                supervisor.add(
++                    build,
++                    supervision.worker(fn() {res})
++                    |> supervision.restart(supervision.Transient)
++                ), 
++                dict.insert(subs, a - 1, sub.data)
++            )
++          }
+         )
+ 
+     let _ = supervisor.start(builder)
+ 
+-    case mode == "simulator" {
+-
+-        True -> {
++    let r_list = []
++    dict.fold(
++        sub_list,
++        r_list,
++        fn(acc, i, a) {
+ 
+-            let r_list = []
+-            dict.fold(
+-                sub_list,
+-                r_list,
+-                fn(acc, i, a) {
+-
+-                    case i == 0 {
+-                        
+-                        True -> {
++            case i == 0 {
++                
++                True -> {
+ 
+-                            zipf.create_subreddits_list(100, a)
++                    zipf.create_subreddits_list(100, a)
+ 
+-                            let t = []
++                    let t = []
+ 
+-                            io.println("sending creation messages")
+-                            let l = list.range(1, 100)
+-                            |>list.fold(
+-                                t,
+-                                fn(acc, _a) {
+-                                    [process.receive_forever(main_sub), ..acc]
+-                                }
+-                            )
+-                            process.send(a, gen_types.InjectThinkingMessage)
+-                            process.send_after(a, run_time, gen_types.InjectShutdownMessage)
+-                            l
++                    io.println("sending creation messages")
++                    let l = list.range(1, 100)
++                    |>list.fold(
++                        t,
++                        fn(acc, _a) {
++                            [process.receive_forever(main_sub), ..acc]
+                         }
++                    )
++                    process.send(a, gen_types.InjectThinkingMessage)
++                    process.send_after(a, run_time, gen_types.InjectShutdownMessage)
+ 
+-                        False -> {
++                    l
++                }
+ 
+-                            process.send(a, gen_types.UpdateSubredditsList(acc))
+-                            process.send_after(a, run_time, gen_types.InjectShutdownMessage)
+-                            acc
+-                        }
++                False -> {
+ 
+-                    }
++                    process.send(a, gen_types.UpdateSubredditsList(acc))
++                    process.send_after(a, run_time, gen_types.InjectShutdownMessage)
++                    acc
+                 }
+-            )
++            }
+         }
++    )
+ 
+-        False -> {
+-
+-            []
+-        }
+-    }
+ 
+     dict.each(sub_list, fn(_, _) {process.receive_forever(main_sub)})
+     io.println("SIMULATION COMPLETE>>>")
+@@ -170,141 +155,159 @@ fn start(
+     |> actor.start
+ }
+ 
+-fn init(
+-    sub: process.Subject(gen_types.UserMessage),
+-    id: Int,
++fn connect_to_engine(
+     engine_atom: atom.Atom,
+     engine_node: atom.Atom,
+-    metrics_atom: atom.Atom,
+-    metrics_node: atom.Atom,
+-    cdf: List(Float),
+-    main_sub: process.Subject(String),
+-    role: String,
+-    ) -> Result(
+-            actor.Initialised(
+-                gen_types.UserState, 
+-                gen_types.UserMessage, 
+-                process.Subject(gen_types.UserMessage)
+-                ), 
+-                String
+-         ) {
++    retry_count: Int
++    ) {
+ 
+-        case node.connect(engine_node) {
+-            
+-            Ok(_node) -> {
++    case node.connect(engine_node) {
++        
++        Ok(_node) -> {
+ 
+-                io.println("Connected to engine")
+-            }
++            io.println("Connected to engine")
++        }
+ 
+-            Error(err) -> {
++        Error(err) -> {
+ 
+-                case err {
++            case err {
+ 
+-                    node.FailedToConnect -> io.println("Node failed to connect")
++                node.FailedToConnect -> io.println("Node failed to connect")
+ 
+-                    node.LocalNodeIsNotAlive -> io.println("Not in distributed mode")
+-                }
++                node.LocalNodeIsNotAlive -> io.println("Not in distributed mode")
+             }
++        }
++    }
++
++    process.sleep(500)
++    let data = global_whereisname(engine_atom)
++    case decode.run(data, gen_decode.pid_decoder()) {
+ 
++        Ok(engine_pid) -> {
++
++            io.println("Found engine's pid")
++            engine_pid
+         }
+ 
+-        case node.connect(metrics_node) {
+-            
+-            Ok(_node) -> {
++        Error(_) -> {
+ 
+-                io.println("Connected to metrics")
+-            }
++            case retry_count > 3 {
+ 
+-            Error(err) -> {
++                True -> panic as "Couldnt find engine, restart the engine before starting simulator"
+ 
+-                case err {
++                False -> {
+ 
+-                    node.FailedToConnect -> io.println("Node failed to connect")
++                    process.sleep(int.random(300) + {retry_count * 1000})
+ 
+-                    node.LocalNodeIsNotAlive -> io.println("Not in distributed mode")
++                    io.println("[SIMULATOR]: couldnt find engine, retrying connection...")
++                    connect_to_engine(engine_atom, engine_node, retry_count + 1)
+                 }
+             }
+-
+         }
++    }
++}
+ 
+-        case id == 1 {
+-            True -> { 
+-                process.sleep(500)
+-                Nil
+-            }
++fn connect_to_metrics(
++    metrics_atom: atom.Atom,
++    metrics_node: atom.Atom,
++    ) {
++
++    case node.connect(metrics_node) {
++        
++        Ok(_node) -> {
+ 
+-            False -> Nil
++            io.println("Connected to metrics")
+         }
+-        let data = global_whereisname(engine_atom)
+-        let pid = case decode.run(data, gen_decode.pid_decoder()) {
+ 
+-            Ok(engine_pid) -> {
++        Error(err) -> {
+ 
+-                io.println("Found engine's pid")
+-                engine_pid
+-            }
++            case err {
+ 
+-            Error(_) -> {
++                node.FailedToConnect -> io.println("Node failed to connect")
+ 
+-                io.println("Couldnt find engine's pid")
+-                panic
++                node.LocalNodeIsNotAlive -> io.println("Not in distributed mode")
+             }
+         }
+ 
+-        let data = global_whereisname(metrics_atom)
+-        let metrics_pid = case decode.run(data, gen_decode.pid_decoder()) {
++    }
+ 
+-            Ok(metrics_pid) -> {
++    process.sleep(500)
++    let data = global_whereisname(metrics_atom)
++    case decode.run(data, gen_decode.pid_decoder()) {
+ 
+-                io.println("Found metrics's pid")
+-                metrics_pid
+-            }
++        Ok(metrics_pid) -> {
+ 
+-            Error(_) -> {
++            io.println("Found metrics's pid")
++            metrics_pid
++        }
+ 
+-                io.println("Couldnt find metric's pid")
+-                panic
+-            }
++        Error(_) -> {
++
++            io.println("Couldnt find metric's pid, starting without metrics collection")
++            process.self()
+         }
+-        
+-        let init_state = gen_types.UserState(
+-                            id: id,
+-                            zipf_rank: 1.0 /. int.to_float(id),
+-                            self_sub: sub,
+-                            main_sub: main_sub,
+-                            engine_pid: pid,
+-                            engine_atom: engine_atom,
+-                            metrics_pid: metrics_pid,
+-                            user_name: "user_" <> int.to_string(id),
+-                            uuid: "",
+-                            posts: [],
+-                            subreddits: [],
+-                            comments: [],
+-                            users: [],
+-                            dms: [],
+-                            cdf: cdf,
+-                            sub_count: 0,
+-                            role: role,
+-                            pending_reqs: dict.new(),
+-                            priv_key: "",
+-                            pub_key: "",
+-                            pub_key_map: dict.new(),
+-                         )
+-
+-
+-        let selector = process.new_selector() 
+-        let selector_tag_list = gen_select.get_user_selector_list() 
+-
+-        let selector = utls.create_selector(selector, selector_tag_list)
+-        |> process.select_map(sub, fn(msg) {msg})
+-
+-        let ret = actor.initialised(init_state)
+-        |> actor.returning(sub)
+-        |> actor.selecting(selector)
+-
+-        //process.send(sub, gen_types.UserTestMessage)
+-
+-        Ok(ret)
++    }
++}
++
++fn init(
++    sub: process.Subject(gen_types.UserMessage),
++    id: Int,
++    engine_atom: atom.Atom,
++    engine_node: atom.Atom,
++    metrics_atom: atom.Atom,
++    metrics_node: atom.Atom,
++    cdf: List(Float),
++    main_sub: process.Subject(String),
++    role: String,
++    ) -> Result(
++            actor.Initialised(
++                gen_types.UserState, 
++                gen_types.UserMessage, 
++                process.Subject(gen_types.UserMessage)
++                ), 
++                String
++    ) {
++
++    let metrics_pid = connect_to_metrics(metrics_atom, metrics_node)
++    let engine_pid = connect_to_engine(engine_atom, engine_node, 0)
++
++    let init_state = gen_types.UserState(
++                        id: id,
++                        zipf_rank: 1.0 /. int.to_float(id),
++                        self_sub: sub,
++                        main_sub: main_sub,
++                        engine_pid: engine_pid,
++                        engine_atom: engine_atom,
++                        metrics_pid: metrics_pid,
++                        user_name: "user_" <> int.to_string(id),
++                        uuid: "",
++                        posts: [],
++                        subreddits: [],
++                        comments: [],
++                        users: [],
++                        dms: [],
++                        cdf: cdf,
++                        sub_count: 0,
++                        role: role,
++                        pending_reqs: dict.new(),
++                        priv_key: "",
++                        pub_key: "",
++                        pub_key_map: dict.new(),
++                        signature: "",
++                     )
++
++
++    let selector = process.new_selector() 
++    let selector_tag_list = gen_select.get_user_selector_list() 
++
++    let selector = utls.create_selector(selector, selector_tag_list)
++    |> process.select_map(sub, fn(msg) {msg})
++
++    let ret = actor.initialised(init_state)
++    |> actor.returning(sub)
++    |> actor.selecting(selector)
++
++    Ok(ret)
+ }
+ 
+ fn get_fsm_actions(state: gen_types.UserState) -> List(gen_types.UserMessage) {
+@@ -596,7 +599,7 @@ fn handle_user(
+ 
+         gen_types.InjectShutdownMessage -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " disconnecting")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " disconnecting")
+             utls.send_to_engine(#("shutdown_user", state.user_name))
+             user_metrics.send_shutdown(state.metrics_pid)
+             process.send(state.main_sub, "")
+@@ -610,9 +613,9 @@ fn handle_user(
+             let delay = 10000.0 /. state.zipf_rank |> float.round
+             let jitter = int.random(delay/4)
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " disconnecting")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " disconnecting")
+             process.sleep(delay + jitter)
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " reconnecting")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " reconnecting")
+ 
+             actor.continue(state)
+         }
+@@ -632,7 +635,7 @@ fn handle_user(
+ 
+         gen_types.UpdateSubredditsList(subs) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " updating subreddits")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " updating subreddits")
+             let new_state = gen_types.UserState(
+                                 ..state,
+                                 subreddits: list.append(subs, state.subreddits)
+@@ -646,7 +649,7 @@ fn handle_user(
+ 
+         gen_types.InjectRegisterUser -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting register user")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " injecting register user")
+ 
+             let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
+ 
+@@ -666,15 +669,28 @@ fn handle_user(
+ 
+         gen_types.RegisterUserSuccess(user_id, req_id) -> {
+ 
+-            io.println("[CLIENT]: registered client with uuid: " <> user_id)
++            io.println("[SIMULATOR]: registered client with uuid: " <> user_id)
+ 
+             let new_pending = user_metrics.send_timing_metrics(
+                 req_id, "register_user", state.pending_reqs, state.metrics_pid)
+ 
++            let signature = case rsa_keys.sign_message_with_pem_string(
++                bit_array.from_string(user_id), state.priv_key) {            
++                Ok(bits) -> {
++
++                    bits|>bit_array.base16_encode
++                }
++
++                Error(_) -> {
++
++                    ""
++                }
++            }
+             let new_state = gen_types.UserState(
+                                 ..state,
+                                 uuid: user_id, 
+                                 pending_reqs: new_pending,
++                                signature: signature,
+                             )
+             actor.continue(new_state)
+         }
+@@ -682,8 +698,9 @@ fn handle_user(
+         gen_types.RegisterUserFailed(name, fail_reason, req_id) -> {
+ 
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to register user " <> name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " failed to register user " <> name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+ 
++            
+             utls.send_to_pid(
+                 state.metrics_pid, 
+                 #("record_action", "register_user", "failed")
+@@ -700,7 +717,7 @@ fn handle_user(
+ 
+         gen_types.InjectLoginUser -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting login user")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " injecting login user")
+ 
+             let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
+ 
+@@ -714,18 +731,31 @@ fn handle_user(
+ 
+         }
+ 
+-
+         gen_types.LoginUserSuccess(user_id, req_id) -> {
+ 
+-            io.println("[CLIENT]: login client with uuid: " <> user_id)
++            io.println("[SIMULATOR]: login client with uuid: " <> user_id)
+ 
+             let new_pending = user_metrics.send_timing_metrics(
+                 req_id, "login_user", state.pending_reqs, state.metrics_pid)
+ 
++            let signature = case rsa_keys.sign_message_with_pem_string(
++                bit_array.from_string(user_id), state.priv_key) {            
++                Ok(bits) -> {
++
++                    bits|>bit_array.base16_encode
++                }
++
++                Error(_) -> {
++
++                    ""
++                }
++            }
++
+             let new_state = gen_types.UserState(
+                                 ..state,
+                                 uuid: user_id, 
+                                 pending_reqs: new_pending,
++                                signature: signature,
+                             )
+             actor.continue(new_state)
+         }
+@@ -733,7 +763,7 @@ fn handle_user(
+         gen_types.LoginUserFailed(name, fail_reason, req_id) -> {
+ 
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to login user " <> name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " failed to login user " <> name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+ 
+             utls.send_to_pid(
+                 state.metrics_pid, 
+@@ -747,12 +777,11 @@ fn handle_user(
+             actor.continue(new_state)
+         }
+ 
+-
+-//---------------------------------------------- CreateSubreddit ----------------------------------------
++//---------------------------------------------- CreateSubreddit ---------------------------------------
+ 
+         gen_types.InjectCreateSubreddit -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting create sub reddit")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " injecting create sub reddit")
+ 
+             let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
+ 
+@@ -763,13 +792,13 @@ fn handle_user(
+             )
+ 
+             utls.send_to_engine(#("create_subreddit", self(), state.uuid,
+-                "subreddit_"<>int.to_string(state.sub_count), req_id))
++                "subreddit_"<>int.to_string(state.sub_count), state.signature, req_id))
+             actor.continue(new_state)
+         }
+ 
+         gen_types.CreateSubredditSuccess(subreddit_id, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully created subreddit " <> subreddit_id)
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " successfully created subreddit " <> subreddit_id)
+ 
+             let new_pending = user_metrics.send_timing_metrics(
+                 req_id, "create_subreddit", state.pending_reqs, state.metrics_pid)
+@@ -787,7 +816,7 @@ fn handle_user(
+ 
+         gen_types.CreateSubredditFailed(subreddit_name, fail_reason, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to create subreddit " <> subreddit_name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " failed to create subreddit " <> subreddit_name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+ 
+             utls.send_to_pid(
+                 state.metrics_pid, 
+@@ -807,7 +836,7 @@ fn handle_user(
+             let subreddit_id = zipf.sample_zipf(state.cdf)
+             |> find_subreddit_to_send(state.subreddits)
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting join subreddit")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " injecting join subreddit")
+ 
+             let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
+ 
+@@ -815,13 +844,13 @@ fn handle_user(
+                 ..state,
+                 pending_reqs: new_pending,
+             )
+-            utls.send_to_engine(#("join_subreddit", self(), state.uuid, subreddit_id, req_id))
++            utls.send_to_engine(#("join_subreddit", self(), state.uuid, subreddit_id, state.signature, req_id))
+             actor.continue(state)
+         }
+ 
+         gen_types.JoinSubredditSuccess(subreddit_id, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully joined subreddit " <> subreddit_id)
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " successfully joined subreddit " <> subreddit_id)
+ 
+             let new_pending = user_metrics.send_timing_metrics(
+                 req_id, "join_subreddit", state.pending_reqs, state.metrics_pid)
+@@ -837,7 +866,7 @@ fn handle_user(
+ 
+         gen_types.JoinSubredditFailed(subreddit_id, fail_reason, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to join subreddit " <> subreddit_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " failed to join subreddit " <> subreddit_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+ 
+             utls.send_to_pid(
+                 state.metrics_pid, 
+@@ -857,7 +886,7 @@ fn handle_user(
+             let subreddit_id = zipf.sample_zipf(state.cdf)
+             |> find_subreddit_to_send(state.subreddits)
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting leave subreddit")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " injecting leave subreddit")
+ 
+             let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
+ 
+@@ -865,13 +894,13 @@ fn handle_user(
+                 ..state,
+                 pending_reqs: new_pending,
+             )
+-            utls.send_to_engine(#("leave_subreddit", self(), state.uuid, subreddit_id, req_id))
++            utls.send_to_engine(#("leave_subreddit", self(), state.uuid, subreddit_id, state.signature, req_id))
+             actor.continue(state)
+         }
+ 
+         gen_types.LeaveSubredditSuccess(subreddit_id, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully left subreddit " <> subreddit_id)
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " successfully left subreddit " <> subreddit_id)
+ 
+             let new_pending = user_metrics.send_timing_metrics(
+                 req_id, "leave_subreddit", state.pending_reqs, state.metrics_pid)
+@@ -891,7 +920,7 @@ fn handle_user(
+ 
+         gen_types.LeaveSubredditFailed(subreddit_id, fail_reason, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to leave subreddit " <> subreddit_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " failed to leave subreddit " <> subreddit_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+ 
+             utls.send_to_pid(
+                 state.metrics_pid, 
+@@ -909,7 +938,7 @@ fn handle_user(
+ 
+         gen_types.InjectSearchSubreddit -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting search subreddit")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " injecting search subreddit")
+             let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
+ 
+             let state = gen_types.UserState(
+@@ -922,6 +951,7 @@ fn handle_user(
+                     self(), 
+                     state.uuid,
+                     "subreddit_"<>int.to_string(int.random(1000)),
++                    state.signature,
+                     req_id
+                 )
+             )
+@@ -930,7 +960,7 @@ fn handle_user(
+         
+         gen_types.SearchSubredditSuccess(subreddit_id, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully found subreddit" <> subreddit_id)
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " successfully found subreddit" <> subreddit_id)
+ 
+             let new_pending = user_metrics.send_timing_metrics(
+                 req_id, "search_subreddit", state.pending_reqs, state.metrics_pid)
+@@ -945,7 +975,7 @@ fn handle_user(
+ 
+         gen_types.SearchSubredditFailed(subreddit_name, fail_reason, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to find subreddit " <> subreddit_name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " failed to find subreddit " <> subreddit_name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+ 
+             utls.send_to_pid(
+                 state.metrics_pid, 
+@@ -978,7 +1008,7 @@ fn handle_user(
+                         signature: ""
+                        )
+             |> gen_decode.post_serializer
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting create post")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " injecting create post")
+ 
+             let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
+ 
+@@ -993,6 +1023,7 @@ fn handle_user(
+                     state.uuid,
+                     subreddit_id,
+                     post,
++                    state.signature,
+                     req_id
+                 )
+             )
+@@ -1001,7 +1032,7 @@ fn handle_user(
+         
+         gen_types.CreatePostSuccess(post_id, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully posted to subreddit " <> post_id)
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " successfully posted to subreddit " <> post_id)
+ 
+             let new_pending = user_metrics.send_timing_metrics(
+                 req_id, "create_post", state.pending_reqs, state.metrics_pid)
+@@ -1017,7 +1048,7 @@ fn handle_user(
+ 
+         gen_types.CreatePostFailed(subreddit_name, fail_reason, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to post to subreddit " <> subreddit_name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " failed to post to subreddit " <> subreddit_name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+ 
+             utls.send_to_pid(
+                 state.metrics_pid, 
+@@ -1036,7 +1067,7 @@ fn handle_user(
+         gen_types.InjectDeletePost -> {
+ 
+             let assert [post_to_send] = list.sample(state.posts, 1)
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting create post")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " injecting create post")
+             let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
+ 
+             let state = gen_types.UserState(
+@@ -1049,6 +1080,7 @@ fn handle_user(
+                     self(), 
+                     state.uuid,
+                     post_to_send,
++                    state.signature,
+                     req_id
+                 )
+             )
+@@ -1057,7 +1089,7 @@ fn handle_user(
+         
+         gen_types.DeletePostSuccess(post_id, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully deleted post" <> post_id)
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " successfully deleted post" <> post_id)
+ 
+             let new_pending = user_metrics.send_timing_metrics(
+                 req_id, "delete_post", state.pending_reqs, state.metrics_pid)
+@@ -1073,7 +1105,7 @@ fn handle_user(
+ 
+         gen_types.DeletePostFailed(post_id, fail_reason, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to delete post " <> post_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " failed to delete post " <> post_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+ 
+             utls.send_to_pid(
+                 state.metrics_pid, 
+@@ -1094,7 +1126,7 @@ fn handle_user(
+         gen_types.InjectCreateRepost -> {
+ 
+             let assert [post_to_send] = list.sample(state.posts, 1)
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting create post")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " injecting create post")
+             let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
+ 
+             let state = gen_types.UserState(
+@@ -1107,6 +1139,7 @@ fn handle_user(
+                     self(), 
+                     state.uuid,
+                     post_to_send,
++                    state.signature,
+                     req_id
+                 )
+             )
+@@ -1115,7 +1148,7 @@ fn handle_user(
+         
+         gen_types.CreateRepostSuccess(post_id, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully posted to subreddit " <> post_id)
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " successfully posted to subreddit " <> post_id)
+ 
+             let new_pending = user_metrics.send_timing_metrics(
+                 req_id, "create_repost", state.pending_reqs, state.metrics_pid)
+@@ -1131,7 +1164,7 @@ fn handle_user(
+ 
+         gen_types.CreateRepostFailed(post_id, fail_reason, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to repost " <> post_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " failed to repost " <> post_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+ 
+             utls.send_to_pid(
+                 state.metrics_pid, 
+@@ -1150,7 +1183,7 @@ fn handle_user(
+         gen_types.InjectGetPost -> {
+ 
+             let assert [post_to_send] = list.sample(state.posts, 1)
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting get post")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " injecting get post")
+             let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
+ 
+             let state = gen_types.UserState(
+@@ -1163,6 +1196,7 @@ fn handle_user(
+                     self(), 
+                     state.uuid,
+                     post_to_send,
++                    state.signature,
+                     req_id
+                 )
+             )
+@@ -1171,7 +1205,7 @@ fn handle_user(
+         
+         gen_types.GetPostSuccess(post, _comments_list, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully got post" <> post.id)
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " successfully got post" <> post.id)
+ 
+             let new_pending = user_metrics.send_timing_metrics(
+                 req_id, "get_post", state.pending_reqs, state.metrics_pid)
+@@ -1187,7 +1221,7 @@ fn handle_user(
+ 
+         gen_types.GetPostFailed(post_id, fail_reason, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to delete post " <> post_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " failed to delete post " <> post_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+ 
+             utls.send_to_pid(
+                 state.metrics_pid, 
+@@ -1216,7 +1250,7 @@ fn handle_user(
+                         downvotes: 0,
+                        )
+             |> gen_decode.comment_serializer
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting create comment")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " injecting create comment")
+ 
+             let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
+ 
+@@ -1231,6 +1265,7 @@ fn handle_user(
+                     state.uuid,
+                     post_to_send,
+                     comment,
++                    state.signature,
+                     req_id
+                 )
+             )
+@@ -1239,7 +1274,7 @@ fn handle_user(
+         
+         gen_types.CreateCommentSuccess(comment_id, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully comment to parent " <> comment_id)
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " successfully comment to parent " <> comment_id)
+ 
+             let new_pending = user_metrics.send_timing_metrics(
+                 req_id, "create_comment", state.pending_reqs, state.metrics_pid)
+@@ -1254,7 +1289,7 @@ fn handle_user(
+ 
+         gen_types.CreateCommentFailed(parent_id, fail_reason, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to comment to parent " <> parent_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " failed to comment to parent " <> parent_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+ 
+             utls.send_to_pid(
+                 state.metrics_pid, 
+@@ -1274,7 +1309,7 @@ fn handle_user(
+             
+             let assert [post_to_send] = list.sample(state.posts, 1)
+             let vote_t = "up"
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting vote")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " injecting vote")
+ 
+             let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
+ 
+@@ -1289,6 +1324,7 @@ fn handle_user(
+                     state.uuid,
+                     post_to_send,
+                     vote_t,
++                    state.signature,
+                     req_id
+                 )
+             )
+@@ -1297,7 +1333,7 @@ fn handle_user(
+         
+         gen_types.CreateVoteSuccess(parent_id, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully voted to parent " <> parent_id)
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " successfully voted to parent " <> parent_id)
+ 
+             let new_pending = user_metrics.send_timing_metrics(
+                 req_id, "create_vote", state.pending_reqs, state.metrics_pid)
+@@ -1311,7 +1347,7 @@ fn handle_user(
+ 
+         gen_types.CreateVoteFailed(parent_id, fail_reason, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to vote to parent " <> parent_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " failed to vote to parent " <> parent_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+ 
+             utls.send_to_pid(
+                 state.metrics_pid, 
+@@ -1329,7 +1365,7 @@ fn handle_user(
+ 
+         gen_types.InjectGetFeed -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting get feed")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " injecting get feed")
+ 
+             let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
+ 
+@@ -1342,6 +1378,7 @@ fn handle_user(
+                     "get_feed",
+                     self(), 
+                     state.uuid,
++                    state.signature,
+                     req_id
+                 )
+             )
+@@ -1350,7 +1387,7 @@ fn handle_user(
+         
+         gen_types.GetFeedSuccess(posts_list, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully got feed") 
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " successfully got feed") 
+ 
+             let new_pending = user_metrics.send_timing_metrics(
+                 req_id, "get_feed", state.pending_reqs, state.metrics_pid)
+@@ -1365,7 +1402,7 @@ fn handle_user(
+ 
+         gen_types.GetFeedFailed(user_id, fail_reason, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to get feed for user " <> user_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " failed to get feed for user " <> user_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+ 
+             utls.send_to_pid(
+                 state.metrics_pid, 
+@@ -1386,7 +1423,7 @@ fn handle_user(
+             let subreddit_to_send = zipf.sample_zipf(state.cdf)
+                                             |> find_subreddit_to_send(state.subreddits)
+             echo subreddit_to_send
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting get subreddit feed")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " injecting get subreddit feed")
+ 
+             let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
+ 
+@@ -1400,6 +1437,7 @@ fn handle_user(
+                     self(), 
+                     state.uuid,
+                     subreddit_to_send,
++                    state.signature,
+                     req_id
+                 )
+             )
+@@ -1408,7 +1446,7 @@ fn handle_user(
+         
+         gen_types.GetSubredditfeedSuccess(posts_list, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully got subreddit feed") 
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " successfully got subreddit feed") 
+ 
+             let new_pending = user_metrics.send_timing_metrics(
+                 req_id, "get_subredditfeed", state.pending_reqs, state.metrics_pid)
+@@ -1425,7 +1463,7 @@ fn handle_user(
+ 
+         gen_types.GetSubredditfeedFailed(subreddit_id, fail_reason, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to get subreddit feed from parent " <> subreddit_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " failed to get subreddit feed from parent " <> subreddit_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+ 
+             utls.send_to_pid(
+                 state.metrics_pid, 
+@@ -1443,7 +1481,7 @@ fn handle_user(
+ 
+         gen_types.InjectSearchUser -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting search user")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " injecting search user")
+             let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
+ 
+             let state = gen_types.UserState(
+@@ -1456,6 +1494,7 @@ fn handle_user(
+                     self(), 
+                     state.uuid,
+                     "user_"<>int.to_string(int.random(1000)),
++                    state.signature,
+                     req_id
+                 )
+             )
+@@ -1464,7 +1503,7 @@ fn handle_user(
+         
+         gen_types.SearchUserSuccess(user_id, pub_key, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully found user" <> user_id)
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " successfully found user" <> user_id)
+ 
+             let new_pending = user_metrics.send_timing_metrics(
+                 req_id, "search_user", state.pending_reqs, state.metrics_pid)
+@@ -1480,7 +1519,7 @@ fn handle_user(
+ 
+         gen_types.SearchUserFailed(user_name, fail_reason, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to find user " <> user_name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " failed to find user " <> user_name <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+ 
+             utls.send_to_pid(
+                 state.metrics_pid, 
+@@ -1499,7 +1538,7 @@ fn handle_user(
+         gen_types.InjectStartDirectmessage -> {
+ 
+             let assert [user_to_send] = list.sample(state.users, 1)
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting start dm")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " injecting start dm")
+             let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
+ 
+             let state = gen_types.UserState(
+@@ -1513,6 +1552,7 @@ fn handle_user(
+                     state.uuid,
+                     user_to_send,
+                     "test_dm"<>int.to_string(int.random(1000)),
++                    state.signature,
+                     req_id
+                 )
+             )
+@@ -1521,7 +1561,7 @@ fn handle_user(
+         
+         gen_types.StartDirectmessageSuccess(dm_id, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully started dm") 
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " successfully started dm") 
+ 
+             let new_pending = user_metrics.send_timing_metrics(
+                 req_id, "start_directmessage", state.pending_reqs, state.metrics_pid)
+@@ -1536,7 +1576,7 @@ fn handle_user(
+ 
+         gen_types.StartDirectmessageFailed(to_id, fail_reason, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to start dm " <> to_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " failed to start dm " <> to_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+ 
+             utls.send_to_pid(
+                 state.metrics_pid, 
+@@ -1555,7 +1595,7 @@ fn handle_user(
+         gen_types.InjectReplyDirectmessage -> {
+ 
+             let assert [dm_to_send] = list.sample(state.users, 1)
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting reply dm")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " injecting reply dm")
+             let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
+ 
+             let state = gen_types.UserState(
+@@ -1569,6 +1609,7 @@ fn handle_user(
+                     state.uuid,
+                     dm_to_send,
+                     "test_reply"<>int.to_string(int.random(1000)),
++                    state.signature,
+                     req_id
+                 )
+             )
+@@ -1577,7 +1618,7 @@ fn handle_user(
+         
+         gen_types.ReplyDirectmessageSuccess(dm_id, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully replied "<>dm_id) 
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " successfully replied "<>dm_id) 
+ 
+             let new_pending = user_metrics.send_timing_metrics(
+                 req_id, "reply_directmessage", state.pending_reqs, state.metrics_pid)
+@@ -1591,7 +1632,7 @@ fn handle_user(
+ 
+         gen_types.ReplyDirectmessageFailed(to_user_id, fail_reason, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to reply " <> to_user_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " failed to reply " <> to_user_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+ 
+             utls.send_to_pid(
+                 state.metrics_pid, 
+@@ -1608,7 +1649,7 @@ fn handle_user(
+ 
+         gen_types.InjectGetDirectmessages -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " injecting get directmessages")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " injecting get directmessages")
+             let #(req_id, new_pending) = user_metrics.send_to_engine(state.pending_reqs)
+ 
+             let state = gen_types.UserState(
+@@ -1620,6 +1661,7 @@ fn handle_user(
+                     "get_directmessages",
+                     self(), 
+                     state.uuid,
++                    state.signature,
+                     req_id
+                 )
+             )
+@@ -1628,7 +1670,7 @@ fn handle_user(
+         
+         gen_types.GetDirectmessagesSuccess(dms_list, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " successfully got dms ") 
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " successfully got dms ") 
+ 
+             let new_pending = user_metrics.send_timing_metrics(
+                 req_id, "get_directmessages", state.pending_reqs, state.metrics_pid)
+@@ -1644,7 +1686,7 @@ fn handle_user(
+ 
+         gen_types.GetDirectmessagesFailed(user_id, fail_reason, req_id) -> {
+ 
+-            io.println("[CLIENT]: " <> int.to_string(state.id) <> " failed to get dms " <> user_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
++            io.println("[SIMULATOR]: " <> int.to_string(state.id) <> " failed to get dms " <> user_id <> " \n|||| REASON: " <> fail_reason <> " |||\n")
+ 
+             utls.send_to_pid(
+                 state.metrics_pid, 
+diff --git a/reddit-sim/src/metrics/metrics.gleam b/reddit-sim/src/metrics/metrics.gleam
+index 82f9296..b652c67 100644
+--- a/reddit-sim/src/metrics/metrics.gleam
++++ b/reddit-sim/src/metrics/metrics.gleam
+@@ -24,6 +24,9 @@ import generated/generated_decoders as gen_decode
+ import utls
+ import metrics/metrics_selectors as met_sel
+ 
++@external(erlang, "erlang", "self")
++fn self() -> process.Pid
++
+ pub type MetricsState {
+ 
+   MetricsState(
+@@ -40,33 +43,75 @@ pub type MetricsState {
+ }
+ 
+ @external(erlang, "global", "register_name")
+-fn global_register(name: atom.Atom, pid: Pid) -> atom.Atom
++fn global_register(name: atom.Atom, pid: process.Pid) -> atom.Atom 
+ 
+ @external(erlang, "global", "whereis_name")
+ fn global_whereisname(name: atom.Atom) -> dynamic.Dynamic
+ 
+-@external(erlang, "erlang", "self")
+-fn self() -> process.Pid
+-
+-pub fn create(num_users: Int) -> Nil {
++pub fn create(
++    engine_ip: String,
++    num_users: Int,
++    self_ip: String
++    ) -> Nil {
+     let main_sub = process.new_subject()
+-    let _ = start(num_users, main_sub)
++    let _ = start(num_users, main_sub, engine_ip, self_ip)
+     process.receive_forever(main_sub)
+     Nil
+ }
+ 
+ 
+-fn start(num_users: Int, main_sub) -> actor.StartResult(Subject(met_sel.MetricsMessage)) {
++fn start(
++    num_users: Int,
++    main_sub: process.Subject(Nil),
++    engine_ip: String,
++    self_ip: String
++    ) -> actor.StartResult(Subject(met_sel.MetricsMessage)) {
+     
+-    actor.new_with_initialiser(1000, fn(sub) {init(sub, main_sub, num_users)})
++    actor.new_with_initialiser(1000, fn(sub) {init(sub, main_sub, num_users, engine_ip, self_ip)})
+     |> actor.on_message(handle_metrics)
+     |> actor.start
+ }
+ 
++fn connect_to_engine(
++    engine_node: atom.Atom,
++    engine_atom: atom.Atom,
++    retry_count: Int
++    ) {
++
++    process.sleep(500)
++    let data = global_whereisname(engine_atom)
++    case decode.run(data, gen_decode.pid_decoder()) {
++
++        Ok(engine_pid) -> {
++
++            io.println("Found engine's pid")
++            engine_pid
++        }
++
++        Error(_) -> {
++
++            case retry_count > 3 {
++
++                True -> panic as "Couldnt find engine, restart the engine before starting simulator"
++
++                False -> {
++
++                    process.sleep(int.random(300) + {{retry_count + 1} * 1000})
++
++                    io.println("[METRICS]: couldnt find engine, retrying connection...")
++                    connect_to_engine(engine_atom, engine_node, retry_count + 1)
++                }
++            }
++        }
++    }
++}
++
+ fn init(
+     sub: Subject(met_sel.MetricsMessage),
+     main_sub: Subject(Nil),
+-    num_users: Int
++    num_users: Int,
++    engine_ip: String,
++    _self_ip: String
+     ) -> Result(
+             actor.Initialised(
+                 MetricsState,
+@@ -74,93 +119,79 @@ fn init(
+                 Subject(met_sel.MetricsMessage)
+             ),
+            String 
+-        ) {
+-
+-        let metrics_atom = atom.create("metrics")
+-        let engine_atom = atom.create("engine")
+-        let yes_atom = atom.create("yes")
++    ) {
+ 
+-        let engine_node = atom.create("engine@localhost")
++    let engine_atom = atom.create("engine")
++    let metrics_atom = atom.create("metrics")
++    let yes_atom = atom.create("yes")
+ 
+-        let assert Ok(pid) = process.subject_owner(sub)
+-        case metrics_atom 
+-        |> global_register(pid) == yes_atom {
++    let engine_node = atom.create("engine@"<>engine_ip)
++    echo atom.to_string(engine_node)
+ 
+-            True -> {
++    let assert Ok(pid) = process.subject_owner(sub)
++    case  global_register(metrics_atom, pid) == yes_atom {
+ 
+-                io.println("successfully registered")
+-            }
+-
+-            
+-            False -> {
++        True -> {
+ 
+-                io.println("failed register of global name")
+-            }
+-            
++            io.println("successfully registered")
+         }
+ 
+-        case node.connect(engine_node) {
+-            
+-            Ok(_node) -> {
+-
+-                io.println("Connected to engine")
+-            }
+-
+-            Error(err) -> {
++        
++        False -> {
+ 
+-                case err {
++            io.println("failed register of global name")
++        }
++        
++    }
+ 
+-                    node.FailedToConnect -> io.println("Node failed to connect")
+ 
+-                    node.LocalNodeIsNotAlive -> io.println("Not in distributed mode")
+-                }
+-            }
++    io.println("Waiting 1 second for engine to start")
++    process.sleep(1000)
++    case node.connect(engine_node) {
++        
++        Ok(_node) -> {
+ 
++            io.println("Connected to engine")
+         }
+ 
++        Error(err) -> {
+ 
+-        process.sleep(500)
+-        let data = global_whereisname(engine_atom)
+-        let pid = case decode.run(data, gen_decode.pid_decoder()) {
+-
+-            Ok(engine_pid) -> {
+-
+-                io.println("Found engine's pid")
+-                engine_pid
+-            }
++            case err {
+ 
+-            Error(_) -> {
++                node.FailedToConnect -> io.println("Node failed to connect")
+ 
+-                io.println("Couldnt find engine's pid")
+-                panic
++                node.LocalNodeIsNotAlive -> io.println("Not in distributed mode")
+             }
+         }
+ 
+-        let init_state = MetricsState(
+-            self_sub: sub,
+-            main_sub: main_sub,
+-            latencies: dict.new(),
+-            action_counts: dict.new(),
+-            engine_stats: dict.new(),
+-            engine_pid: pid,
+-            start_time: timestamp.system_time(),
+-            shutdown_count: 0,
+-            num_users: num_users,
+-        )
++    }
++    let engine_pid = connect_to_engine(engine_node, engine_atom, 0)
++
++    let init_state = MetricsState(
++        self_sub: sub,
++        main_sub: main_sub,
++        latencies: dict.new(),
++        action_counts: dict.new(),
++        engine_stats: dict.new(),
++        engine_pid: engine_pid,
++        start_time: timestamp.system_time(),
++        shutdown_count: 0,
++        num_users: num_users,
++    )
+ 
+-        process.send_after(sub, 5000, met_sel.PollEngine)
+-        process.send_after(sub, 10000, met_sel.WriteToCsv)
+-
+-        let selector_tag_list = met_sel.metrics_selector_list()
+-        let selector = 
+-        process.new_selector()
+-        |> utls.create_selector(selector_tag_list)
+-        |> process.select_map(sub, fn(msg) {msg})
+-        Ok(
+-            actor.initialised(init_state)
+-            |> actor.returning(sub)
+-            |> actor.selecting(selector),
+-        )
++    process.send_after(sub, 5000, met_sel.PollEngine)
++    process.send_after(sub, 10000, met_sel.WriteToCsv)
++
++    let selector_tag_list = met_sel.metrics_selector_list()
++    let selector = 
++    process.new_selector()
++    |> utls.create_selector(selector_tag_list)
++    |> process.select_map(sub, fn(msg) {msg})
++    Ok(
++        actor.initialised(init_state)
++        |> actor.returning(sub)
++        |> actor.selecting(selector),
++    )
+ }
+ 
+ 
+diff --git a/reddit-sim/src/reddit_sim.gleam b/reddit-sim/src/reddit_sim.gleam
+index 98f2e52..ad0d722 100644
+--- a/reddit-sim/src/reddit_sim.gleam
++++ b/reddit-sim/src/reddit_sim.gleam
+@@ -1,11 +1,13 @@
+ import gleam/io
+ import gleam/int
++import gleam/list
+ import gleam/result
+ import argv
+ 
+ import client/users
+ import server/engine
+ import metrics/metrics
++import server/web_server
+ 
+ type ArgsError {
+ 
+@@ -21,15 +23,32 @@ type BuildType {
+     Client
+ 
+     Metrics
++
++    ApiGateway
+ }
+ 
+ pub fn main() -> Nil {
+ 
+     let res = case argv.load().arguments {
+ 
+-        [build_type, num_users] -> {
++        [build_type, self_ip, engine_ip] -> {
++
++            case build_type {
++
++                "api_gateway" -> Ok(#(ApiGateway, engine_ip, "", self_ip, 0, 0))
++                
++                _ -> {
++
++                    io.println("Invalid build type, Usage: gleam run [server|metrics|client|api_gateway] ip numUsers [runTimeSeconds]")
++                    Error(InvalidArgs)
++                }
++            }
++        }
+ 
+-            use numusers <- result.try(fn() {
++        [build_type, engine_ip_or_metrics_ip, num_users, self_ip] -> {
++
++            use numusers <- result.try(
++                fn() {
+                 case int.parse(num_users) {
+ 
+                     Ok(users) -> {
+@@ -42,62 +61,31 @@ pub fn main() -> Nil {
+                         }
+                     }
+ 
+-                    Error(_) -> { 
+-
+-                        Error(InvalidArgs)
+-                    }
++                    Error(_) -> Error(InvalidArgs)
+                 }
+-            }())
+-
+-            
++                }()
++            )
+             case build_type {
+ 
+-                "server" -> {
+-
+-                    Ok(#(Server, "", numusers, 0))
+-                }
+-
+-                "metrics" -> {
+-
+-                    Ok(#(Metrics, "", numusers, 0))
+-                }
+-                "client" -> {
++                "server" -> Ok(#(Server, "", engine_ip_or_metrics_ip, self_ip, numusers, 0))
+ 
+-                    io.println("Invalid use of client type, Usage: gleam run client numUsers") 
+-                    Error(InvalidArgs)
+-                }
++                "metrics" -> Ok(#(Metrics, engine_ip_or_metrics_ip, "", self_ip, numusers, 0))
+ 
+                 _ -> {
+ 
+-                    io.println("Invalid build type, Usage: gleam run [server|metrics|client] numUsers [runTimeSeconds]")
+-                    Error(InvalidArgs)
++                    io.println("Invalid build type, Usage: gleam run [server|metrics|client|api_gateway] ip numUsers [runTimeSeconds]")
++                 Error(InvalidArgs)
+                 }
+             }
+         }
+ 
+-        [build_type, client_mode, num_users, run_time] -> {
++
++        [build_type, metrics_ip, engine_ip, num_users, run_time, self_ip] -> {
+ 
+             case build_type {
+ 
+                 "client" -> {
+ 
+-                    use clientmode <- result.try(fn() {
+-                        case client_mode {
+-
+-                            "simulator" -> {
+-
+-                                Ok(client_mode)
+-                            }
+-
+-                            "web_server" -> {
+-
+-                                Ok(client_mode)
+-                            }
+-
+-                            _ -> Error(InvalidArgs)
+-                        }
+-                    }())
+-
+                     use numusers <- result.try(fn() {
+                         case int.parse(num_users) {
+ 
+@@ -119,42 +107,49 @@ pub fn main() -> Nil {
+                     }())
+                     use runtime <- result.try(result.map_error(int.parse(run_time), fn(_) {InvalidArgs}))
+ 
+-                    Ok(#(Client, clientmode, numusers, runtime))
++                    Ok(#(Client, metrics_ip, engine_ip, self_ip, numusers, runtime))
++
+                 }
+ 
+                 _ -> {
+ 
+-                    io.println("Invalid build type, Usage: gleam run [server|metrics|client] numUsers [runTimeSeconds]")
++                    io.println("Invalid build type, Usage: gleam run [server|metrics|client|api_gateway] ip numUsers [runTimeSeconds]")
+                     Error(InvalidArgs)
+                 }
+             }
+         }
+ 
+-        _ -> {
++        [..args] -> {
+ 
+-            Error(WrongArgCount(3))
++            echo args
++            Error(WrongArgCount(list.length(args)))
+         }
+     }
+ 
+     case res {
+ 
+-        Ok(#(build_type, client_mode, num_users, run_time)) -> {
++        Ok(#(build_type, ip1, ip2, ip3, num_users, run_time)) -> {
+ 
+             case build_type {
+ 
+                 Server -> {
+ 
+-                    engine.create(num_users)
++                    engine.create(ip2, num_users, ip3)
+                 }
+ 
+                 Client -> {
+ 
+-                    users.create(client_mode, num_users, run_time)
++                    users.create(ip1, ip2, num_users, run_time, ip3)
+                 }
+ 
+                 Metrics -> {
+                     
+-                    metrics.create(num_users)
++                    metrics.create(ip1, num_users, ip3)
++                }
++
++                ApiGateway -> {
++
++                    web_server.create(ip1, ip3)
+                 }
+             }
+ 
+diff --git a/reddit-sim/src/server/engine.gleam b/reddit-sim/src/server/engine.gleam
+index f55aec5..f22bf47 100644
+--- a/reddit-sim/src/server/engine.gleam
++++ b/reddit-sim/src/server/engine.gleam
+@@ -4,6 +4,8 @@ import gleam/list.{Continue, Stop}
+ import gleam/result
+ import gleam/crypto
+ import gleam/bit_array
++import gleam/dynamic
++import gleam/dynamic/decode
+ import gleam/option.{Some, None}
+ 
+ import gleam/otp/actor
+@@ -12,27 +14,33 @@ import gleam/otp/supervision
+ 
+ import gleam/erlang/process
+ import gleam/erlang/atom
++import gleam/erlang/node
+ 
+ import youid/uuid
+ 
+ import generated/generated_types as gen_types 
+ import generated/generated_selectors as gen_select
+-import generated/generated_decoders as gen_decoders
++import generated/generated_decoders as gen_decode
+ import utls
+-import server/web_server
+ 
+ @external(erlang, "global", "register_name")
+ fn global_register(name: atom.Atom, pid: process.Pid) -> atom.Atom 
+ 
+-pub fn create(num_users: Int) -> Nil {
++@external(erlang, "global", "whereis_name")
++fn global_whereisname(name: atom.Atom) -> dynamic.Dynamic 
++
++pub fn create(
++    metrics_ip: String,
++    num_users: Int,
++    self_ip: String,
++    ) -> Nil {
+ 
+     let main_sub = process.new_subject()
+     let _ = supervisor.new(supervisor.OneForOne)
+     |> supervisor.add(
+         supervision.worker(
+             fn() {
+-                let res = start(num_users, main_sub)
+-                let _ = web_server.start()
++                let res = start(num_users, main_sub, metrics_ip, self_ip)
+                 res
+             }
+         )
+@@ -44,32 +52,41 @@ pub fn create(num_users: Int) -> Nil {
+     Nil
+ }
+ 
+-fn start(num_users, main_sub) -> actor.StartResult(process.Subject(gen_types.EngineMessage)) {
++fn start(
++    num_users: Int,
++    main_sub: process.Subject(String),
++    metrics_ip: String,
++    self_ip: String
++    ) -> actor.StartResult(process.Subject(gen_types.EngineMessage)) {
+     
+-    actor.new_with_initialiser(1000, fn(sub) {init(sub, main_sub, num_users)})
++    actor.new_with_initialiser(1000, fn(sub) {init(sub, main_sub, num_users, metrics_ip, self_ip)})
+     |> actor.on_message(handle_engine)
+     |> actor.start
+-
+ }
+ 
+ fn init(
+     sub: process.Subject(gen_types.EngineMessage),
+     main_sub: process.Subject(String),
+-    num_users: Int
++    num_users: Int,
++    metrics_ip: String,
++    _self_ip: String
+     ) -> Result(actor.Initialised(gen_types.EngineState, gen_types.EngineMessage, process.Subject(gen_types.EngineMessage)), String) {
+ 
+ 
+     let engine_atom = atom.create("engine")
++    let metrics_atom = atom.create("metrics")
++    let metrics_node = atom.create("metrics@"<>metrics_ip)
+     let yes_atom = atom.create("yes")
++    
++    echo metrics_ip
++
+     let assert Ok(pid) = process.subject_owner(sub)
+-    case engine_atom 
+-    |> global_register(pid) == yes_atom {
++    case engine_atom |> global_register(pid) == yes_atom {
+ 
+         True -> {
+ 
+             io.println("successfully registered")
+         }
+-
+         
+         False -> {
+ 
+@@ -77,6 +94,41 @@ fn init(
+         }
+         
+     }
++    case node.connect(metrics_node) {
++        
++        Ok(_node) -> {
++
++            io.println("Connected to metrics")
++        }
++
++        Error(err) -> {
++
++            case err {
++
++                node.FailedToConnect -> io.println("Node failed to connect")
++
++                node.LocalNodeIsNotAlive -> io.println("Not in distributed mode")
++            }
++        }
++
++    }
++    io.println("[ENGINE]: waiting 2 seconds for metrics to catch up")
++    process.sleep(2000)
++    let data = global_whereisname(metrics_atom)
++    let metrics_pid = case decode.run(data, gen_decode.pid_decoder()) {
++
++        Ok(metrics_pid) -> {
++
++            io.println("[ENGINE]: found metrics's pid")
++            metrics_pid
++        }
++
++        Error(_) -> {
++
++            io.println("[ENGINE]: couldnt find metric's pid, starting without metrics")
++            pid
++        }
++    }
+     let init_state = gen_types.EngineState(
+                         self_sub: sub,
+                         main_sub: main_sub,
+@@ -94,7 +146,7 @@ fn init(
+                         dms_data: dict.new(),
+                         shutdown_count: 0,
+                         num_users: num_users,
+-                        metrics_pid: pid,
++                        metrics_pid: metrics_pid,
+                         votable_user_vote_map: dict.new(),
+                         user_sse_pid_map: dict.new(),
+                         user_pub_key_map: dict.new(),
+@@ -192,20 +244,22 @@ fn handle_engine(
+         gen_types.MetricsEnginestats(send_pid) -> {
+ 
+             io.println("[ENGINE]: recvd get stats req")
+-            let users = dict.size(state.users_data)
+-            let posts = dict.size(state.posts_data)
+-            let comments = dict.size(state.comments_data)
+ 
+-            let new_state = gen_types.EngineState(
+-                ..state,
+-                metrics_pid: send_pid,
+-                )
++            case state.metrics_pid == send_pid {
+ 
+-            utls.send_to_pid(
+-              send_pid,
+-              #("engine_stats_reply", users, posts, comments)
+-            )
+-            actor.continue(new_state)
++                True -> {
++
++                    let users = dict.size(state.users_data)
++                    let posts = dict.size(state.posts_data)
++                    let comments = dict.size(state.comments_data)
++                    utls.send_to_pid(send_pid, #("engine_stats_reply", users, posts, comments))
++                    Nil
++                }
++
++                False -> Nil
++            }
++
++            actor.continue(state)
+         }
+ 
+ //------------------------------------------------------------------------------------------------------
+@@ -1031,8 +1085,8 @@ fn handle_engine(
+                                 }
+                             }
+ 
+-                            let post_data = post_data |> gen_decoders.post_serializer
+-                            let comments_list = list.map(comments_list, gen_decoders.comment_serializer)
++                            let post_data = post_data |> gen_decode.post_serializer
++                            let comments_list = list.map(comments_list, gen_decode.comment_serializer)
+                             utls.send_to_pid(send_pid, #("get_post_success", post_data, comments_list, req_id))
+                             state
+                         }
+@@ -1909,7 +1963,7 @@ fn handle_engine(
+                         }
+                     )
+ 
+-                    let posts_list = posts_list|>list.map(gen_decoders.post_serializer)
++                    let posts_list = posts_list|>list.map(gen_decode.post_serializer)
+                     utls.send_to_pid(send_pid, #("get_feed_success", posts_list, req_id))
+                     state
+ 
+@@ -1954,7 +2008,7 @@ fn handle_engine(
+                     let posts_list = get_posts_from_subreddit(subreddit_uuid,
+                                 state.subreddit_posts_map, state.posts_data, 5)
+ 
+-                    let posts_list = posts_list|>list.map(gen_decoders.post_serializer)
++                    let posts_list = posts_list|>list.map(gen_decode.post_serializer)
+                     utls.send_to_pid(send_pid, #("get_subredditfeed_success", posts_list, req_id))
+                     state
+ 
+@@ -2246,7 +2300,7 @@ fn handle_engine(
+                             }
+                         }
+                     )
+-                    |> list.map(gen_decoders.dm_serializer)
++                    |> list.map(gen_decode.dm_serializer)
+                     utls.send_to_pid(send_pid, #("get_directmessages_success", dms_list, req_id))
+                     state
+ 
+diff --git a/reddit-sim/src/server/web_server.gleam b/reddit-sim/src/server/web_server.gleam
+index 2859e88..ef6e25f 100644
+--- a/reddit-sim/src/server/web_server.gleam
++++ b/reddit-sim/src/server/web_server.gleam
+@@ -1,6 +1,7 @@
+ import mist
+ import gleam/http
+ import gleam/io
++import gleam/int
+ import gleam/dynamic
+ import gleam/dynamic/decode
+ import gleam/http/request
+@@ -187,11 +188,11 @@ fn request_handler(
+     }
+ }
+ 
+-pub fn start() {
+-
+-    //let restserver_node = atom.create("restserver@localhost")
+-    let engine_node = atom.create("engine@localhost")
+-    let engine_atom = atom.create("engine")
++fn connect_to_engine(
++    retry_count: Int,
++    engine_node: atom.Atom,
++    engine_atom: atom.Atom,
++    ) {
+ 
+     case node.connect(engine_node) {
+         
+@@ -214,7 +215,7 @@ pub fn start() {
+ 
+     process.sleep(500)
+     let data = global_whereisname(engine_atom)
+-    let engine_pid = case decode.run(data, gen_decode.pid_decoder()) {
++    case decode.run(data, gen_decode.pid_decoder()) {
+ 
+         Ok(engine_pid) -> {
+ 
+@@ -225,13 +226,41 @@ pub fn start() {
+         Error(_) -> {
+ 
+             io.println("Couldnt find engine's pid")
+-            panic
++
++            case retry_count > 3 {
++
++                True -> {
++
++                    panic as "Maximum retries exceeded.. shutting down. please restart after engine is up"
++                } 
++
++                False -> {
++
++                    process.sleep(int.random(300) + {retry_count * 1000})
++                    connect_to_engine(retry_count + 1, engine_node, engine_atom)
++                }
++            }
++            process.self()
+         }
+     }
+ 
++}
++
++pub fn create(
++    self_ip: String,
++    engine_ip: String,
++    ) -> Nil {
++
++    let engine_node = atom.create("engine@"<>engine_ip)
++    let engine_atom = atom.create("engine")
++
++    let engine_pid = connect_to_engine(0, engine_node, engine_atom)
++
+     let assert Ok(_) = mist.new(fn(req) {request_handler(req, engine_pid, create_selector())})
+-    |> mist.bind("localhost")
++    |> mist.bind(self_ip)
+     |> mist.start
++
++    Nil
+ }
+ 
+ 
+diff --git a/reddit-sim/start_client.sh b/reddit-sim/start_client.sh
+index 118bf0f..b3838d8 100755
+--- a/reddit-sim/start_client.sh
++++ b/reddit-sim/start_client.sh
+@@ -1,15 +1,18 @@
+ #!/bin/bash
+ 
+-NUM_USERS=${1:-1000}   # Default to 1000 if no 1st argument
+-RUN_TIME=${2:-60000}   # Default to 60000ms if no 2nd argument
++METRICS_IP=${1:-"localhost"}   # Default to 60000ms if no 2nd argument
++ENGINE_IP=${2:-"localhost"}   # Default to 60000ms if no 2nd argument
++NUM_USERS=${3:-1000}   # Default to 1000 if no 1st argument
++RUN_TIME=${4:-60000}   # Default to 60000ms if no 2nd argument
++IP=${5:-"localhost"}   # Default to 60000ms if no 2nd argument
+ 
+-if [ -z "$1" ] || [ -z "$2" ]; then
++if [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ] || [ -z "$4" ] || [ -z "$5" ]; then
+     echo "Usage: ./start_client.sh <num_users> <run_time_ms>"
+-    echo "Defaulting to $NUM_USERS users for $RUN_TIME ms"
++    echo "Defaulting to ip: $IP, metrics ip: $METRICS_IP, engine ip: $ENGINE_IP with $NUM_USERS users for $RUN_TIME ms"
+     echo ""
+ fi
+ 
+ erl -pa build/dev/erlang/*/ebin \
+-    -sname client@localhost \
++    -sname client@$IP \
+     -setcookie test_cookie \
+-    -s reddit_sim main -- client simulator $NUM_USERS $RUN_TIME
++    -s reddit_sim main -- client $METRICS_IP $ENGINE_IP $NUM_USERS $RUN_TIME $IP
+diff --git a/reddit-sim/start_engine.sh b/reddit-sim/start_engine.sh
+index df0e9e6..1292da8 100755
+--- a/reddit-sim/start_engine.sh
++++ b/reddit-sim/start_engine.sh
+@@ -1,14 +1,16 @@
+ #!/bin/bash
+ 
+-NUM_USERS=${1:-1000} # Default to 1000 if no argument is provided
++METRICS_IP=${1:-"localhost"} # Default to 1000 if no argument is provided
++NUM_USERS=${2:-1000} # Default to 1000 if no argument is provided
++IP=${3:-"localhost"} # Default to 1000 if no argument is provided
+ 
+-if [ -z "$1" ]; then
+-    echo "Usage: ./start_engine.sh <num_users>"
+-    echo "No <num_users> provided, defaulting to $NUM_USERS"
++if [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ]; then
++    echo "Usage: ./start_engine.sh <metrics_ip> <num_users> <ip>"
++    echo "No <num_users> provided, defaulting to ip: $IP, metrics_ip: $METRICS_IP, num_users: $NUM_USERS"
+     echo ""
+ fi
+ 
+ erl -pa build/dev/erlang/*/ebin \
+-    -sname engine@localhost \
++    -sname engine@$IP \
+     -setcookie test_cookie \
+-    -s reddit_sim main -- server $NUM_USERS
++    -s reddit_sim main -- server $METRICS_IP $NUM_USERS $IP
+diff --git a/reddit-sim/start_metrics.sh b/reddit-sim/start_metrics.sh
+index 740d371..f4eae55 100755
+--- a/reddit-sim/start_metrics.sh
++++ b/reddit-sim/start_metrics.sh
+@@ -1,16 +1,18 @@
+ #!/bin/bash
+ 
+ # This should match the number of users the engine and metrics are expecting
+-NUM_USERS=${1:-1000} # Default to 1000 if no argument is provided
++ENGINE_IP=${1:-"localhost"} # Default to 1000 if no argument is provided
++NUM_USERS=${2:-1000} # Default to 1000 if no argument is provided
++IP=${3:-"localhost"} # Default to 1000 if no argument is provided
+ 
+-if [ -z "$1" ]; then
++if [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ]; then
+     echo "Usage: ./start_metrics.sh <num_users>"
+-    echo "No <num_users> provided, defaulting to $NUM_USERS"
++    echo "No <num_users> provided, defaulting to ip: $IP, engine ip: $ENGINE_IP, num_users: $NUM_USERS"
+     echo ""
+ fi
+ 
+ erl -pa build/dev/erlang/*/ebin \
+-    -sname metrics@localhost \
++    -sname metrics@$IP \
+     -setcookie test_cookie \
+-    -s reddit_sim main -- metrics $NUM_USERS
++    -s reddit_sim main -- metrics $ENGINE_IP $NUM_USERS $IP
+ 

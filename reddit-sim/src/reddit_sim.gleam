@@ -1,11 +1,13 @@
 import gleam/io
 import gleam/int
+import gleam/list
 import gleam/result
 import argv
 
 import client/users
 import server/engine
 import metrics/metrics
+import server/web_server
 
 type ArgsError {
 
@@ -21,15 +23,32 @@ type BuildType {
     Client
 
     Metrics
+
+    ApiGateway
 }
 
 pub fn main() -> Nil {
 
     let res = case argv.load().arguments {
 
-        [build_type, num_users] -> {
+        [build_type, self_ip, engine_ip] -> {
 
-            use numusers <- result.try(fn() {
+            case build_type {
+
+                "api_gateway" -> Ok(#(ApiGateway, engine_ip, "", self_ip, 0, 0))
+                
+                _ -> {
+
+                    io.println("Invalid build type, Usage: gleam run [server|metrics|client|api_gateway] ip numUsers [runTimeSeconds]")
+                    Error(InvalidArgs)
+                }
+            }
+        }
+
+        [build_type, engine_ip_or_metrics_ip, num_users, self_ip] -> {
+
+            use numusers <- result.try(
+                fn() {
                 case int.parse(num_users) {
 
                     Ok(users) -> {
@@ -42,61 +61,30 @@ pub fn main() -> Nil {
                         }
                     }
 
-                    Error(_) -> { 
-
-                        Error(InvalidArgs)
-                    }
+                    Error(_) -> Error(InvalidArgs)
                 }
-            }())
-
-            
+                }()
+            )
             case build_type {
 
-                "server" -> {
+                "server" -> Ok(#(Server, "", engine_ip_or_metrics_ip, self_ip, numusers, 0))
 
-                    Ok(#(Server, "", numusers, 0))
-                }
-
-                "metrics" -> {
-
-                    Ok(#(Metrics, "", numusers, 0))
-                }
-                "client" -> {
-
-                    io.println("Invalid use of client type, Usage: gleam run client numUsers") 
-                    Error(InvalidArgs)
-                }
+                "metrics" -> Ok(#(Metrics, engine_ip_or_metrics_ip, "", self_ip, numusers, 0))
 
                 _ -> {
 
-                    io.println("Invalid build type, Usage: gleam run [server|metrics|client] numUsers [runTimeSeconds]")
-                    Error(InvalidArgs)
+                    io.println("Invalid build type, Usage: gleam run [server|metrics|client|api_gateway] ip numUsers [runTimeSeconds]")
+                 Error(InvalidArgs)
                 }
             }
         }
 
-        [build_type, client_mode, num_users, run_time] -> {
+
+        [build_type, metrics_ip, engine_ip, num_users, run_time, self_ip] -> {
 
             case build_type {
 
                 "client" -> {
-
-                    use clientmode <- result.try(fn() {
-                        case client_mode {
-
-                            "simulator" -> {
-
-                                Ok(client_mode)
-                            }
-
-                            "web_server" -> {
-
-                                Ok(client_mode)
-                            }
-
-                            _ -> Error(InvalidArgs)
-                        }
-                    }())
 
                     use numusers <- result.try(fn() {
                         case int.parse(num_users) {
@@ -119,42 +107,49 @@ pub fn main() -> Nil {
                     }())
                     use runtime <- result.try(result.map_error(int.parse(run_time), fn(_) {InvalidArgs}))
 
-                    Ok(#(Client, clientmode, numusers, runtime))
+                    Ok(#(Client, metrics_ip, engine_ip, self_ip, numusers, runtime))
+
                 }
 
                 _ -> {
 
-                    io.println("Invalid build type, Usage: gleam run [server|metrics|client] numUsers [runTimeSeconds]")
+                    io.println("Invalid build type, Usage: gleam run [server|metrics|client|api_gateway] ip numUsers [runTimeSeconds]")
                     Error(InvalidArgs)
                 }
             }
         }
 
-        _ -> {
+        [..args] -> {
 
-            Error(WrongArgCount(3))
+            echo args
+            Error(WrongArgCount(list.length(args)))
         }
     }
 
     case res {
 
-        Ok(#(build_type, client_mode, num_users, run_time)) -> {
+        Ok(#(build_type, ip1, ip2, ip3, num_users, run_time)) -> {
 
             case build_type {
 
                 Server -> {
 
-                    engine.create(num_users)
+                    engine.create(ip2, num_users, ip3)
                 }
 
                 Client -> {
 
-                    users.create(client_mode, num_users, run_time)
+                    users.create(ip1, ip2, num_users, run_time, ip3)
                 }
 
                 Metrics -> {
                     
-                    metrics.create(num_users)
+                    metrics.create(ip1, num_users, ip3)
+                }
+
+                ApiGateway -> {
+
+                    web_server.create(ip1, ip3)
                 }
             }
 

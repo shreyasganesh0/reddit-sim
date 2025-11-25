@@ -1,6 +1,7 @@
 import mist
 import gleam/http
 import gleam/io
+import gleam/int
 import gleam/dynamic
 import gleam/dynamic/decode
 import gleam/http/request
@@ -187,11 +188,11 @@ fn request_handler(
     }
 }
 
-pub fn start() {
-
-    //let restserver_node = atom.create("restserver@localhost")
-    let engine_node = atom.create("engine@localhost")
-    let engine_atom = atom.create("engine")
+fn connect_to_engine(
+    retry_count: Int,
+    engine_node: atom.Atom,
+    engine_atom: atom.Atom,
+    ) {
 
     case node.connect(engine_node) {
         
@@ -214,7 +215,7 @@ pub fn start() {
 
     process.sleep(500)
     let data = global_whereisname(engine_atom)
-    let engine_pid = case decode.run(data, gen_decode.pid_decoder()) {
+    case decode.run(data, gen_decode.pid_decoder()) {
 
         Ok(engine_pid) -> {
 
@@ -225,13 +226,42 @@ pub fn start() {
         Error(_) -> {
 
             io.println("Couldnt find engine's pid")
-            panic
+
+            case retry_count > 3 {
+
+                True -> {
+
+                    panic as "Maximum retries exceeded.. shutting down. please restart after engine is up"
+                } 
+
+                False -> {
+
+                    process.sleep(int.random(300) + {retry_count * 1000})
+                    connect_to_engine(retry_count + 1, engine_node, engine_atom)
+                }
+            }
+            process.self()
         }
     }
 
+}
+
+pub fn create(
+    self_ip: String,
+    engine_ip: String,
+    ) -> Nil {
+
+    let main_sub = process.new_subject()
+    let engine_node = atom.create("engine@"<>engine_ip)
+    let engine_atom = atom.create("engine")
+
+    let engine_pid = connect_to_engine(0, engine_node, engine_atom)
+
     let assert Ok(_) = mist.new(fn(req) {request_handler(req, engine_pid, create_selector())})
-    |> mist.bind("localhost")
+    |> mist.bind(self_ip)
     |> mist.start
+
+    process.receive_forever(main_sub)
 }
 
 

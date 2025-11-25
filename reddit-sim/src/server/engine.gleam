@@ -4,6 +4,8 @@ import gleam/list.{Continue, Stop}
 import gleam/result
 import gleam/crypto
 import gleam/bit_array
+import gleam/dynamic
+import gleam/dynamic/decode
 import gleam/option.{Some, None}
 
 import gleam/otp/actor
@@ -12,27 +14,33 @@ import gleam/otp/supervision
 
 import gleam/erlang/process
 import gleam/erlang/atom
+import gleam/erlang/node
 
 import youid/uuid
 
 import generated/generated_types as gen_types 
 import generated/generated_selectors as gen_select
-import generated/generated_decoders as gen_decoders
+import generated/generated_decoders as gen_decode
 import utls
-import server/web_server
 
 @external(erlang, "global", "register_name")
 fn global_register(name: atom.Atom, pid: process.Pid) -> atom.Atom 
 
-pub fn create(num_users: Int) -> Nil {
+@external(erlang, "global", "whereis_name")
+fn global_whereisname(name: atom.Atom) -> dynamic.Dynamic 
+
+pub fn create(
+    metrics_ip: String,
+    num_users: Int,
+    self_ip: String,
+    ) -> Nil {
 
     let main_sub = process.new_subject()
     let _ = supervisor.new(supervisor.OneForOne)
     |> supervisor.add(
         supervision.worker(
             fn() {
-                let res = start(num_users, main_sub)
-                let _ = web_server.start()
+                let res = start(num_users, main_sub, metrics_ip, self_ip)
                 res
             }
         )
@@ -44,38 +52,82 @@ pub fn create(num_users: Int) -> Nil {
     Nil
 }
 
-fn start(num_users, main_sub) -> actor.StartResult(process.Subject(gen_types.EngineMessage)) {
+fn start(
+    num_users: Int,
+    main_sub: process.Subject(String),
+    metrics_ip: String,
+    self_ip: String
+    ) -> actor.StartResult(process.Subject(gen_types.EngineMessage)) {
     
-    actor.new_with_initialiser(1000, fn(sub) {init(sub, main_sub, num_users)})
+    actor.new_with_initialiser(10000, fn(sub) {init(sub, main_sub, num_users, metrics_ip, self_ip)})
     |> actor.on_message(handle_engine)
     |> actor.start
-
 }
 
 fn init(
     sub: process.Subject(gen_types.EngineMessage),
     main_sub: process.Subject(String),
-    num_users: Int
+    num_users: Int,
+    metrics_ip: String,
+    _self_ip: String
     ) -> Result(actor.Initialised(gen_types.EngineState, gen_types.EngineMessage, process.Subject(gen_types.EngineMessage)), String) {
 
 
     let engine_atom = atom.create("engine")
+    let metrics_atom = atom.create("metrics")
+    let metrics_node = atom.create("metrics@"<>metrics_ip)
     let yes_atom = atom.create("yes")
+    
+    echo metrics_ip
+
     let assert Ok(pid) = process.subject_owner(sub)
-    case engine_atom 
-    |> global_register(pid) == yes_atom {
+    case engine_atom |> global_register(pid) == yes_atom {
 
         True -> {
 
             io.println("successfully registered")
         }
-
         
         False -> {
 
             io.println("failed register of global name")
         }
         
+    }
+    case node.connect(metrics_node) {
+        
+        Ok(_node) -> {
+
+            io.println("Connected to metrics")
+        }
+
+        Error(err) -> {
+
+            case err {
+
+                node.FailedToConnect -> io.println("Node failed to connect")
+
+                node.LocalNodeIsNotAlive -> io.println("Not in distributed mode")
+            }
+        }
+
+    }
+    io.println("[ENGINE]: waiting 2 seconds for metrics to catch up")
+    process.sleep(2000)
+    let data = global_whereisname(metrics_atom)
+    let metrics_pid = case decode.run(data, gen_decode.pid_decoder()) {
+
+        Ok(metrics_pid) -> {
+
+            io.println("[ENGINE]: found metrics's pid")
+            metrics_pid
+        }
+
+        Error(_) -> {
+
+            io.println("[ENGINE]: couldnt find metric's pid, starting without metrics")
+            pid
+        }
     }
     let init_state = gen_types.EngineState(
                         self_sub: sub,
@@ -94,7 +146,7 @@ fn init(
                         dms_data: dict.new(),
                         shutdown_count: 0,
                         num_users: num_users,
-                        metrics_pid: pid,
+                        metrics_pid: metrics_pid,
                         votable_user_vote_map: dict.new(),
                         user_sse_pid_map: dict.new(),
                         user_pub_key_map: dict.new(),
@@ -192,20 +244,22 @@ fn handle_engine(
         gen_types.MetricsEnginestats(send_pid) -> {
 
             io.println("[ENGINE]: recvd get stats req")
-            let users = dict.size(state.users_data)
-            let posts = dict.size(state.posts_data)
-            let comments = dict.size(state.comments_data)
 
-            let new_state = gen_types.EngineState(
-                ..state,
-                metrics_pid: send_pid,
-                )
+            case state.metrics_pid == send_pid {
 
-            utls.send_to_pid(
-              send_pid,
-              #("engine_stats_reply", users, posts, comments)
-            )
-            actor.continue(new_state)
+                True -> {
+
+                    let users = dict.size(state.users_data)
+                    let posts = dict.size(state.posts_data)
+                    let comments = dict.size(state.comments_data)
+                    utls.send_to_pid(send_pid, #("engine_stats_reply", users, posts, comments))
+                    Nil
+                }
+
+                False -> Nil
+            }
+
+            actor.continue(state)
         }
 
 //------------------------------------------------------------------------------------------------------
@@ -1031,8 +1085,8 @@ fn handle_engine(
                                 }
                             }
 
-                            let post_data = post_data |> gen_decoders.post_serializer
-                            let comments_list = list.map(comments_list, gen_decoders.comment_serializer)
+                            let post_data = post_data |> gen_decode.post_serializer
+                            let comments_list = list.map(comments_list, gen_decode.comment_serializer)
                             utls.send_to_pid(send_pid, #("get_post_success", post_data, comments_list, req_id))
                             state
                         }
@@ -1909,7 +1963,7 @@ fn handle_engine(
                         }
                     )
 
-                    let posts_list = posts_list|>list.map(gen_decoders.post_serializer)
+                    let posts_list = posts_list|>list.map(gen_decode.post_serializer)
                     utls.send_to_pid(send_pid, #("get_feed_success", posts_list, req_id))
                     state
 
@@ -1954,7 +2008,7 @@ fn handle_engine(
                     let posts_list = get_posts_from_subreddit(subreddit_uuid,
                                 state.subreddit_posts_map, state.posts_data, 5)
 
-                    let posts_list = posts_list|>list.map(gen_decoders.post_serializer)
+                    let posts_list = posts_list|>list.map(gen_decode.post_serializer)
                     utls.send_to_pid(send_pid, #("get_subredditfeed_success", posts_list, req_id))
                     state
 
@@ -2246,7 +2300,7 @@ fn handle_engine(
                             }
                         }
                     )
-                    |> list.map(gen_decoders.dm_serializer)
+                    |> list.map(gen_decode.dm_serializer)
                     utls.send_to_pid(send_pid, #("get_directmessages_success", dms_list, req_id))
                     state
 

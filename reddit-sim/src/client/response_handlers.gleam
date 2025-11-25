@@ -21,6 +21,7 @@ import generated/generated_types as gen_types
 pub type ReplState {
 
     ReplState(
+        server_ip: String,
         user_id: String,
         user_name: String,
         subreddits: List(String),
@@ -55,6 +56,11 @@ pub fn register_user(resp: response.Response(BitArray), state: ReplState) -> Rep
                     ReplState(
                         ..state,
                         user_id: user_id,
+                        pub_key_map: dict.insert(
+                            state.pub_key_map,
+                            user_id,
+                            state.pub_key
+                            ),
                         signature: sig|>bit_array.base16_encode
                     )
                 }
@@ -88,6 +94,11 @@ pub fn login_user(resp: response.Response(BitArray), state: ReplState) -> ReplSt
                     ReplState(
                         ..state,
                         user_id: user_id,
+                        pub_key_map: dict.insert(
+                            state.pub_key_map,
+                            user_id,
+                            state.pub_key
+                            ),
                         signature: sig|>bit_array.base16_encode
                     )
                 }
@@ -656,12 +667,15 @@ pub fn get_directmessages(resp: response.Response(BitArray), state: ReplState) -
 
 pub fn register_notifications(_resp: response.Response(BitArray), state: ReplState) -> ReplState {
 
-    let req = request_builders.register_notifications(state.user_id, state.signature)
+    let req = request_builders.register_notifications(state.user_id, state.signature, state.server_ip)
 
-    process.spawn(fn(){
-        let _ = client_sse.start(req)
-        process.sleep_forever()
-        })
+    process.spawn(
+        fn(){
+            let main_sub = process.new_subject()
+            let _ = client_sse.start(req, main_sub)
+            process.receive_forever(main_sub)
+        }
+    )
 
     state
 }

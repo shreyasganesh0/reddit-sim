@@ -12,7 +12,7 @@ import generated/generated_types as gen_types
 
 import utls
 
-pub fn register_user(username: String, password: String, pub_key: String) {
+pub fn register_user(username: String, password: String, pub_key: String, server_ip: String) {
 
     let send_body = dict.from_list(
         [
@@ -26,7 +26,7 @@ pub fn register_user(username: String, password: String, pub_key: String) {
     |> bit_array.from_string
 
     let content_length = bit_array.byte_size(send_body)
-    let base_req = request.to("http://localhost:4000/api/v1/register")
+    let base_req = request.to("http://"<>server_ip<>":4000/api/v1/register")
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
@@ -36,7 +36,7 @@ pub fn register_user(username: String, password: String, pub_key: String) {
     |> request.set_method(http.Post)
 }
 
-pub fn login_user(username: String, password: String, pub_key: String) {
+pub fn login_user(username: String, password: String, pub_key: String, server_ip: String) {
 
     let send_body = dict.from_list(
         [
@@ -50,7 +50,7 @@ pub fn login_user(username: String, password: String, pub_key: String) {
     |> bit_array.from_string
 
     let content_length = bit_array.byte_size(send_body)
-    let base_req = request.to("http://localhost:4000/api/v1/login")
+    let base_req = request.to("http://"<>server_ip<>":4000/api/v1/login")
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
@@ -60,9 +60,9 @@ pub fn login_user(username: String, password: String, pub_key: String) {
     |> request.set_method(http.Post)
 }
 
-pub fn search_user(username: String, user_id: String, signature: String) {
+pub fn search_user(username: String, user_id: String, signature: String, server_ip: String) {
 
-    let base_req = request.to("http://localhost:4000/api/v1/search_user?q="<>username)
+    let base_req = request.to("http://"<>server_ip<>":4000/api/v1/search_user?q="<>username)
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
@@ -75,7 +75,7 @@ pub fn search_user(username: String, user_id: String, signature: String) {
     |> request.set_method(http.Get)
 }
 
-pub fn create_subreddit(subreddit_name: String, user_id: String, signature: String) {
+pub fn create_subreddit(subreddit_name: String, user_id: String, signature: String, server_ip: String) {
 
     let send_body = dict.from_list([
         #("subreddit_name", subreddit_name),
@@ -86,7 +86,7 @@ pub fn create_subreddit(subreddit_name: String, user_id: String, signature: Stri
     |> bit_array.from_string
 
     let content_length = bit_array.byte_size(send_body)
-    let base_req = request.to("http://localhost:4000/api/v1/subreddit")
+    let base_req = request.to("http://"<>server_ip<>":4000/api/v1/subreddit")
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
@@ -101,7 +101,7 @@ pub fn create_subreddit(subreddit_name: String, user_id: String, signature: Stri
     |> request.set_method(http.Post)
 }
 
-pub fn join_subreddit(subreddit_name: String, subreddit_id: String, user_id: String, signature: String) {
+pub fn join_subreddit(subreddit_name: String, subreddit_id: String, user_id: String, signature: String, server_ip: String) {
 
     let send_body = dict.from_list([
     #("subreddit_id", subreddit_id),
@@ -112,7 +112,7 @@ pub fn join_subreddit(subreddit_name: String, subreddit_id: String, user_id: Str
     |> bit_array.from_string
 
     let content_length = bit_array.byte_size(send_body)
-    let base_req = request.to("http://localhost:4000/r/"<>subreddit_name<>"/api/subscribe")
+    let base_req = request.to("http://"<>server_ip<>":4000/r/"<>subreddit_name<>"/api/subscribe")
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
@@ -127,7 +127,7 @@ pub fn join_subreddit(subreddit_name: String, subreddit_id: String, user_id: Str
     |> request.set_method(http.Post)
 }
 
-pub fn leave_subreddit(subreddit_name: String, subreddit_id: String, user_id: String, signature: String) {
+pub fn leave_subreddit(subreddit_name: String, subreddit_id: String, user_id: String, signature: String, server_ip: String) {
 
     let send_body = dict.from_list([
     #("subreddit_id", subreddit_id),
@@ -138,7 +138,7 @@ pub fn leave_subreddit(subreddit_name: String, subreddit_id: String, user_id: St
     |> bit_array.from_string
 
     let content_length = bit_array.byte_size(send_body)
-    let base_req = request.to("http://localhost:4000/r/"<>subreddit_name<>"/api/subscribe")
+    let base_req = request.to("http://"<>server_ip<>":4000/r/"<>subreddit_name<>"/api/subscribe")
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
@@ -153,9 +153,9 @@ pub fn leave_subreddit(subreddit_name: String, subreddit_id: String, user_id: St
     |> request.set_method(http.Delete)
 }
 
-pub fn search_subreddit(subreddit_name: String, user_id: String, signature: String) {
+pub fn search_subreddit(subreddit_name: String, user_id: String, signature: String, server_ip: String) {
 
-    let base_req = request.to("http://localhost:4000/api/v1/search_subreddit?q="<>subreddit_name)
+    let base_req = request.to("http://"<>server_ip<>":4000/api/v1/search_subreddit?q="<>subreddit_name)
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
@@ -170,7 +170,8 @@ pub fn search_subreddit(subreddit_name: String, user_id: String, signature: Stri
 
 pub fn create_post(
     post: gen_types.Post,
-    signature: String
+    signature: String,
+    server_ip: String
     ) {
 
     let post_body = post
@@ -185,7 +186,7 @@ pub fn create_post(
     |> bit_array.from_string
 
     let content_length = bit_array.byte_size(send_body)
-    let base_req = request.to("http://localhost:4000/r/"<>post.subreddit_id<>"/api/submit")
+    let base_req = request.to("http://"<>server_ip<>":4000/r/"<>post.subreddit_id<>"/api/submit")
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
@@ -200,7 +201,7 @@ pub fn create_post(
     |> request.set_method(http.Post)
 }
 
-pub fn create_repost(post_id: String, user_id: String, post_sig: String, signature: String) {
+pub fn create_repost(post_id: String, user_id: String, post_sig: String, signature: String, server_ip: String) {
 
     let send_body = dict.from_list(
     [#("post_id", post_id),
@@ -212,7 +213,7 @@ pub fn create_repost(post_id: String, user_id: String, post_sig: String, signatu
     |> bit_array.from_string
 
     let content_length = bit_array.byte_size(send_body)
-    let base_req = request.to("http://localhost:4000/api/v1/repost")
+    let base_req = request.to("http://"<>server_ip<>":4000/api/v1/repost")
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
@@ -227,9 +228,9 @@ pub fn create_repost(post_id: String, user_id: String, post_sig: String, signatu
     |> request.set_method(http.Post)
 }
 
-pub fn get_post(post_id: String, user_id: String, signature: String) {
+pub fn get_post(post_id: String, user_id: String, signature: String, server_ip: String) {
 
-    let base_req = request.to("http://localhost:4000/api/v1/post/"<>post_id)
+    let base_req = request.to("http://"<>server_ip<>":4000/api/v1/post/"<>post_id)
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
@@ -242,9 +243,9 @@ pub fn get_post(post_id: String, user_id: String, signature: String) {
     |> request.set_method(http.Get)
 }
 
-pub fn delete_post(post_id: String, user_id: String, signature: String) {
+pub fn delete_post(post_id: String, user_id: String, signature: String, server_ip: String) {
 
-    let base_req = request.to("http://localhost:4000/api/v1/post/"<>post_id)
+    let base_req = request.to("http://"<>server_ip<>":4000/api/v1/post/"<>post_id)
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
@@ -257,7 +258,7 @@ pub fn delete_post(post_id: String, user_id: String, signature: String) {
     |> request.set_method(http.Delete)
 }
 
-pub fn create_comment(parent_id: String, user_id: String, body: String, signature: String) {
+pub fn create_comment(parent_id: String, user_id: String, body: String, signature: String, server_ip: String) {
 
     let comment_body =
         gen_types.Comment(
@@ -279,7 +280,7 @@ pub fn create_comment(parent_id: String, user_id: String, body: String, signatur
     |> bit_array.from_string
 
     let content_length = bit_array.byte_size(send_body)
-    let base_req = request.to("http://localhost:4000/api/v1/comment")
+    let base_req = request.to("http://"<>server_ip<>":4000/api/v1/comment")
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
@@ -294,7 +295,7 @@ pub fn create_comment(parent_id: String, user_id: String, body: String, signatur
     |> request.set_method(http.Post)
 }
 
-pub fn create_vote(parent_id: String, user_id: String, vote_t: String, signature: String) {
+pub fn create_vote(parent_id: String, user_id: String, vote_t: String, signature: String, server_ip: String) {
 
     let send_body = json.object(
         [
@@ -307,7 +308,7 @@ pub fn create_vote(parent_id: String, user_id: String, vote_t: String, signature
     |> bit_array.from_string
 
     let content_length = bit_array.byte_size(send_body)
-    let base_req = request.to("http://localhost:4000/api/v1/vote")
+    let base_req = request.to("http://"<>server_ip<>":4000/api/v1/vote")
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
@@ -322,9 +323,9 @@ pub fn create_vote(parent_id: String, user_id: String, vote_t: String, signature
     |> request.set_method(http.Post)
 }
 
-pub fn get_feed(user_id: String, signature: String) {
+pub fn get_feed(user_id: String, signature: String, server_ip: String) {
 
-    let base_req = request.to("http://localhost:4000/api/v1/feed")
+    let base_req = request.to("http://"<>server_ip<>":4000/api/v1/feed")
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
@@ -337,9 +338,9 @@ pub fn get_feed(user_id: String, signature: String) {
     |> request.set_method(http.Get)
 }
 
-pub fn get_subredditfeed(subreddit_id: String, user_id: String, signature: String) {
+pub fn get_subredditfeed(subreddit_id: String, user_id: String, signature: String, server_ip: String) {
 
-    let base_req = request.to("http://localhost:4000/r/"<>subreddit_id<>"/api/posts")
+    let base_req = request.to("http://"<>server_ip<>":4000/r/"<>subreddit_id<>"/api/posts")
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
@@ -352,7 +353,7 @@ pub fn get_subredditfeed(subreddit_id: String, user_id: String, signature: Strin
     |> request.set_method(http.Get)
 }
 
-pub fn start_directmessage(to_send_id: String, user_id: String, message: String, signature: String) {
+pub fn start_directmessage(to_send_id: String, user_id: String, message: String, signature: String, server_ip: String) {
 
     let send_body = json.object(
         [
@@ -365,7 +366,7 @@ pub fn start_directmessage(to_send_id: String, user_id: String, message: String,
     |> bit_array.from_string
 
     let content_length = bit_array.byte_size(send_body)
-    let base_req = request.to("http://localhost:4000/api/v1/dm/start")
+    let base_req = request.to("http://"<>server_ip<>":4000/api/v1/dm/start")
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
@@ -380,7 +381,7 @@ pub fn start_directmessage(to_send_id: String, user_id: String, message: String,
     |> request.set_method(http.Post)
 }
 
-pub fn reply_directmessage(to_user_id: String, user_id: String, message: String, signature: String) {
+pub fn reply_directmessage(to_user_id: String, user_id: String, message: String, signature: String, server_ip: String) {
 
     let send_body = json.object(
         [
@@ -393,7 +394,7 @@ pub fn reply_directmessage(to_user_id: String, user_id: String, message: String,
     |> bit_array.from_string
 
     let content_length = bit_array.byte_size(send_body)
-    let base_req = request.to("http://localhost:4000/api/v1/dm/"<>to_user_id<>"/reply")
+    let base_req = request.to("http://"<>server_ip<>":4000/api/v1/dm/"<>to_user_id<>"/reply")
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
@@ -408,9 +409,9 @@ pub fn reply_directmessage(to_user_id: String, user_id: String, message: String,
     |> request.set_method(http.Post)
 }
 
-pub fn get_directmessages(user_id: String, signature: String) {
+pub fn get_directmessages(user_id: String, signature: String, server_ip: String) {
 
-    let base_req = request.to("http://localhost:4000/api/v1/dm")
+    let base_req = request.to("http://"<>server_ip<>":4000/api/v1/dm")
     |> result.unwrap(request.new())
     |> request.map(bit_array.from_string)
     
@@ -423,9 +424,9 @@ pub fn get_directmessages(user_id: String, signature: String) {
     |> request.set_method(http.Get)
 }
 
-pub fn register_notifications(user_id: String, signature: String) {
+pub fn register_notifications(user_id: String, signature: String, server_ip: String) {
 
-    let base_req = request.to("http://localhost:4000/api/v1/notification")
+    let base_req = request.to("http://"<>server_ip<>":4000/api/v1/notification")
     |> result.unwrap(request.new())
     |> request.map(bytes_tree.from_string)
     

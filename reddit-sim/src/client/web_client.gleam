@@ -12,6 +12,7 @@ import gleam/httpc
 import rsa_keys
 
 import utls
+import argv
 
 import generated/generated_types as gen_types
 
@@ -208,7 +209,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                             )
                             Ok(
                                 #(
-                                request_builders.register_user(username, password, pub_key.pem),
+                                request_builders.register_user(username, password, pub_key.pem, state.server_ip),
                                 response_handlers.register_user,
                                 new_state,
                                 )
@@ -234,7 +235,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                             )
                             Ok(
                                 #(
-                                request_builders.login_user(username, password, pub_key.pem),
+                                request_builders.login_user(username, password, pub_key.pem, state.server_ip),
                                 response_handlers.login_user,
                                 new_state,
                                 )
@@ -267,7 +268,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                             )
                             Ok(
                                 #(
-                                request_builders.search_user(username, user_id, state.signature),
+                                request_builders.search_user(username, user_id, state.signature, state.server_ip),
                                 response_handlers.search_user,
                                 new_state,
                                 )
@@ -302,7 +303,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
 
                             Ok(
                                 #(
-                                request_builders.create_subreddit(subreddit_name, user_id, state.signature),
+                                request_builders.create_subreddit(subreddit_name, user_id, state.signature, state.server_ip),
                                 response_handlers.create_subreddit,
                                 new_state
                                 )
@@ -337,7 +338,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                             )
                             Ok(
                                 #(
-                                request_builders.join_subreddit(subreddit_name, subreddit_id, user_id, state.signature),
+                                request_builders.join_subreddit(subreddit_name, subreddit_id, user_id, state.signature, state.server_ip),
                                 response_handlers.join_subreddit,
                                 state
                                 )
@@ -371,7 +372,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                             )
                             Ok(
                                 #(
-                                request_builders.search_subreddit(subreddit_name, user_id, state.signature),
+                                request_builders.search_subreddit(subreddit_name, user_id, state.signature, state.server_ip),
                                 response_handlers.search_subreddit,
                                 new_state
                                 )
@@ -407,7 +408,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
 
                             Ok(
                                 #(
-                                request_builders.leave_subreddit(subreddit_name, subreddit_id, user_id, state.signature),
+                                request_builders.leave_subreddit(subreddit_name, subreddit_id, user_id, state.signature, state.server_ip),
                                 response_handlers.leave_subreddit,
                                 state
                                 )
@@ -485,7 +486,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
 
                             Ok(
                                 #(
-                                request_builders.create_post(post, state.signature),
+                                request_builders.create_post(post, state.signature, state.server_ip),
                                 response_handlers.create_post,
                                 state
                                 )
@@ -530,7 +531,8 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                                     post_id, 
                                     user_id,
                                     post_sig|>bit_array.base16_encode,
-                                    state.signature
+                                    state.signature,
+                                    state.server_ip
                                 ),
                                 response_handlers.create_repost,
                                 state
@@ -560,7 +562,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                             )
                             Ok(
                                 #(
-                                request_builders.delete_post(post_id, user_id, state.signature),
+                                request_builders.delete_post(post_id, user_id, state.signature, state.server_ip),
                                 response_handlers.delete_post,
                                 state
                                 )
@@ -590,7 +592,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
 
                             Ok(
                                 #(
-                                request_builders.get_post(post_id, user_id, state.signature),
+                                request_builders.get_post(post_id, user_id, state.signature, state.server_ip),
                                 response_handlers.get_post,
                                 state
                                 )
@@ -641,7 +643,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
 
                             Ok(
                                 #(
-                                request_builders.create_comment(parent_id, user_id, body, state.signature),
+                                request_builders.create_comment(parent_id, user_id, body, state.signature, state.server_ip),
                                 response_handlers.create_comment,
                                 state
                                 )
@@ -692,7 +694,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
 
                             Ok(
                                 #(
-                                request_builders.create_vote(parent_id, user_id, "down", state.signature),
+                                request_builders.create_vote(parent_id, user_id, "down", state.signature, state.server_ip),
                                 response_handlers.create_vote,
                                 state
                                 )
@@ -742,7 +744,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
 
                             Ok(
                                 #(
-                                request_builders.create_vote(parent_id, user_id, "up", state.signature),
+                                request_builders.create_vote(parent_id, user_id, "up", state.signature, state.server_ip),
                                 response_handlers.create_vote,
                                 state
                                 )
@@ -792,7 +794,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
 
                             Ok(
                                 #(
-                                request_builders.create_vote(parent_id, user_id, "remove", state.signature),
+                                request_builders.create_vote(parent_id, user_id, "remove", state.signature, state.server_ip),
                                 response_handlers.create_vote,
                                 state
                                 )
@@ -820,7 +822,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                             )
                             Ok(
                                 #(
-                                request_builders.get_feed(user_id, state.signature),
+                                request_builders.get_feed(user_id, state.signature, state.server_ip),
                                 response_handlers.get_feed,
                                 state
                                 )
@@ -854,7 +856,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                             )
                             Ok(
                                 #(
-                                request_builders.get_subredditfeed(subreddit_id, user_id, state.signature),
+                                request_builders.get_subredditfeed(subreddit_id, user_id, state.signature, state.server_ip),
                                 response_handlers.get_subredditfeed,
                                 state
                                 )
@@ -902,7 +904,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                             )
                             Ok(
                                 #(
-                                request_builders.start_directmessage(to_send_id, user_id, msg, state.signature),
+                                request_builders.start_directmessage(to_send_id, user_id, msg, state.signature, state.server_ip),
                                 response_handlers.start_directmessage,
                                 new_state
                                 )
@@ -940,7 +942,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                             )
                             Ok(
                                 #(
-                                request_builders.reply_directmessage(to_send_id, user_id, msg, state.signature),
+                                request_builders.reply_directmessage(to_send_id, user_id, msg, state.signature, state.server_ip),
                                 response_handlers.reply_directmessage,
                                 new_state
                                 )
@@ -964,7 +966,7 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                     )
                     Ok(
                         #(
-                        request_builders.get_directmessages(user_id, state.signature),
+                        request_builders.get_directmessages(user_id, state.signature, state.server_ip),
                         response_handlers.get_directmessages,
                         state
                         )
@@ -982,7 +984,15 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
 
 pub fn main() {
 
+    let domain_name = case argv.load().arguments {
+
+        ["--server-ip", ip] -> ip
+
+        _ -> "localhost"
+    }
+
     let init_state = response_handlers.ReplState(
+                        server_ip: domain_name,
                         user_id: "",
                         user_name: "",
                         subreddits: [],

@@ -24,6 +24,9 @@ import generated/generated_decoders as gen_decode
 import utls
 import metrics/metrics_selectors as met_sel
 
+@external(erlang, "erlang", "self")
+fn self() -> process.Pid
+
 pub type MetricsState {
 
   MetricsState(
@@ -40,33 +43,75 @@ pub type MetricsState {
 }
 
 @external(erlang, "global", "register_name")
-fn global_register(name: atom.Atom, pid: Pid) -> atom.Atom
+fn global_register(name: atom.Atom, pid: process.Pid) -> atom.Atom 
 
 @external(erlang, "global", "whereis_name")
 fn global_whereisname(name: atom.Atom) -> dynamic.Dynamic
 
-@external(erlang, "erlang", "self")
-fn self() -> process.Pid
-
-pub fn create(num_users: Int) -> Nil {
+pub fn create(
+    engine_ip: String,
+    num_users: Int,
+    self_ip: String
+    ) -> Nil {
     let main_sub = process.new_subject()
-    let _ = start(num_users, main_sub)
+    let _ = start(num_users, main_sub, engine_ip, self_ip)
     process.receive_forever(main_sub)
     Nil
 }
 
 
-fn start(num_users: Int, main_sub) -> actor.StartResult(Subject(met_sel.MetricsMessage)) {
+fn start(
+    num_users: Int,
+    main_sub: process.Subject(Nil),
+    engine_ip: String,
+    self_ip: String
+    ) -> actor.StartResult(Subject(met_sel.MetricsMessage)) {
     
-    actor.new_with_initialiser(1000, fn(sub) {init(sub, main_sub, num_users)})
+    actor.new_with_initialiser(10000, fn(sub) {init(sub, main_sub, num_users, engine_ip, self_ip)})
     |> actor.on_message(handle_metrics)
     |> actor.start
+}
+
+fn connect_to_engine(
+    engine_node: atom.Atom,
+    engine_atom: atom.Atom,
+    retry_count: Int
+    ) {
+
+    process.sleep(500)
+    let data = global_whereisname(engine_atom)
+    case decode.run(data, gen_decode.pid_decoder()) {
+
+        Ok(engine_pid) -> {
+
+            io.println("Found engine's pid")
+            engine_pid
+        }
+
+        Error(_) -> {
+
+            case retry_count > 3 {
+
+                True -> panic as "Couldnt find engine, restart the engine before starting simulator"
+
+                False -> {
+
+                    process.sleep(int.random(300) + {{retry_count + 1} * 1000})
+
+                    io.println("[METRICS]: couldnt find engine, retrying connection...")
+                    connect_to_engine(engine_atom, engine_node, retry_count + 1)
+                }
+            }
+        }
+    }
 }
 
 fn init(
     sub: Subject(met_sel.MetricsMessage),
     main_sub: Subject(Nil),
-    num_users: Int
+    num_users: Int,
+    engine_ip: String,
+    _self_ip: String
     ) -> Result(
             actor.Initialised(
                 MetricsState,
@@ -74,93 +119,79 @@ fn init(
                 Subject(met_sel.MetricsMessage)
             ),
            String 
-        ) {
+    ) {
 
-        let metrics_atom = atom.create("metrics")
-        let engine_atom = atom.create("engine")
-        let yes_atom = atom.create("yes")
+    let engine_atom = atom.create("engine")
+    let metrics_atom = atom.create("metrics")
+    let yes_atom = atom.create("yes")
 
-        let engine_node = atom.create("engine@localhost")
+    let engine_node = atom.create("engine@"<>engine_ip)
+    echo atom.to_string(engine_node)
 
-        let assert Ok(pid) = process.subject_owner(sub)
-        case metrics_atom 
-        |> global_register(pid) == yes_atom {
+    let assert Ok(pid) = process.subject_owner(sub)
+    case  global_register(metrics_atom, pid) == yes_atom {
 
-            True -> {
+        True -> {
 
-                io.println("successfully registered")
-            }
-
-            
-            False -> {
-
-                io.println("failed register of global name")
-            }
-            
+            io.println("successfully registered")
         }
 
-        case node.connect(engine_node) {
-            
-            Ok(_node) -> {
+        
+        False -> {
 
-                io.println("Connected to engine")
-            }
+            io.println("failed register of global name")
+        }
+        
+    }
 
-            Error(err) -> {
 
-                case err {
+    io.println("Waiting 1 second for engine to start")
+    process.sleep(1000)
+    case node.connect(engine_node) {
+        
+        Ok(_node) -> {
 
-                    node.FailedToConnect -> io.println("Node failed to connect")
-
-                    node.LocalNodeIsNotAlive -> io.println("Not in distributed mode")
-                }
-            }
-
+            io.println("Connected to engine")
         }
 
+        Error(err) -> {
 
-        process.sleep(500)
-        let data = global_whereisname(engine_atom)
-        let pid = case decode.run(data, gen_decode.pid_decoder()) {
+            case err {
 
-            Ok(engine_pid) -> {
+                node.FailedToConnect -> io.println("Node failed to connect")
 
-                io.println("Found engine's pid")
-                engine_pid
-            }
-
-            Error(_) -> {
-
-                io.println("Couldnt find engine's pid")
-                panic
+                node.LocalNodeIsNotAlive -> io.println("Not in distributed mode")
             }
         }
 
-        let init_state = MetricsState(
-            self_sub: sub,
-            main_sub: main_sub,
-            latencies: dict.new(),
-            action_counts: dict.new(),
-            engine_stats: dict.new(),
-            engine_pid: pid,
-            start_time: timestamp.system_time(),
-            shutdown_count: 0,
-            num_users: num_users,
-        )
+    }
+    let engine_pid = connect_to_engine(engine_node, engine_atom, 0)
 
-        process.send_after(sub, 5000, met_sel.PollEngine)
-        process.send_after(sub, 10000, met_sel.WriteToCsv)
+    let init_state = MetricsState(
+        self_sub: sub,
+        main_sub: main_sub,
+        latencies: dict.new(),
+        action_counts: dict.new(),
+        engine_stats: dict.new(),
+        engine_pid: engine_pid,
+        start_time: timestamp.system_time(),
+        shutdown_count: 0,
+        num_users: num_users,
+    )
 
-        let selector_tag_list = met_sel.metrics_selector_list()
-        let selector = 
-        process.new_selector()
-        |> utls.create_selector(selector_tag_list)
-        |> process.select_map(sub, fn(msg) {msg})
-        Ok(
-            actor.initialised(init_state)
-            |> actor.returning(sub)
-            |> actor.selecting(selector),
-        )
+    process.send_after(sub, 5000, met_sel.PollEngine)
+    process.send_after(sub, 10000, met_sel.WriteToCsv)
+
+    let selector_tag_list = met_sel.metrics_selector_list()
+    let selector = 
+    process.new_selector()
+    |> utls.create_selector(selector_tag_list)
+    |> process.select_map(sub, fn(msg) {msg})
+    Ok(
+        actor.initialised(init_state)
+        |> actor.returning(sub)
+        |> actor.selecting(selector),
+    )
 }
 
 
