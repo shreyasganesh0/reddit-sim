@@ -135,4 +135,98 @@ leadership later)
 - all servers start as followers
     - servers remain as followers as long as they receive a valid message from
     leader or candidate
-    - leader sends heartbeats (AppendEntries with no log entries)
+    - leader sends heartbeats (AppendEntries with no log entries) to maintain authority
+    - if a server doesnt receive a heartbeat from the leader withing the election timeout
+    it will start an election
+- Election
+    - increment its term
+    - transition to candidate state
+    - it votes for itself and sends a RequestVote message in parallel to all servers in the cluster
+    - stays in candidate state until
+        - wins the election
+            - wins the election if it gets majority votes
+            - each server votes for at most one candidate per term
+            - majority ensures at most one candidate can win
+            - when it wins it becomes a leader and sends a heartbeat to all other candidates
+        - another server establishes itself as the leader
+            - while waiting for votes it may receive a AppendEntries heartbeat from another leader
+            - if that leaders term is atleast as large as the current term then it accepts that
+            server as the leader and returns to follower state
+        - a period of time goes by without a winner
+            - if split votes occur then the candidates timeout and restart as election
+            - to prevent indefinite retries raft uses randomized timeouts
+                - chosen randomly between (150 - 300ms)
+            - the random timeout is used for both start of election when no heartbeat
+            is received or if a split vote occurs
+
+### Log Replication
+- Once the leader has been elected it services client requests
+- request command appended to leaders log
+- leader issues AppendEntries
+- when the entry is replicated leader applies the command
+to its state machine and returns a result to a client
+    - leader retries entry to clients until they send back ack
+    - even if the client crashes the leader keeps retrying
+
+- log entries are: State machine command + term number + integer index in log
+- once the leader decides a log entry is safe to apply it is commited
+    - commands are commited once the leader receives majority confirmations
+    - all previous commands are also commited once this command is commited
+    - including all entries from previous leaders
+- leader tracks highest known index that it has comitted
+    - the index is included in future AppendEntries
+    - if a follower sees the index it applies all entries up till that point to its state machine
+- LOG MATCHING PROPERTY
+    - if 2 entries have the same index and term on different servers, they store the same command
+        - garunteed by leader must create at most one entry per index per term
+    - if 2 entries have the same index and term on different servers, 
+        - maintained by AppendEntries message including highest seen index and term 
+        before the new changes
+        - if the follower does not seen the entry for that term and index in its log it rejects
+        the AppendEntries for the new entries
+    - the base case when logs are empty matches this property
+    - by induction all future states must maintain the log matching property
+- If a leader crashes followers may have entries that werent commited in the leader since
+it didnt receive all replica confirmations before crashing
+    - to handle this case the leader forces followers to replicate its log
+    - it overwrites the log entries of followers
+        - it must find the latest log entry where they both agree
+        - delete any entries in the followers log after that point
+        - these happen during the consistency check with AppendEntries
+        - leader maintains a nextIndex per follower
+            - index of next log entry that the leader will send to that follower
+        - after it comes back to life it initializes all nextIndex entries 
+        to the index right after the latest index in its log
+        - If it receives any Reject messages from the AppendEntries
+            - it logs the nextIndex and retries for that follower
+            - eventually by reducing the nextIndex to send to that follower
+            the logs will reach a state where both are consistent (leader and follower logs)
+            - once they agree that AppendEntries message will erase all inconsistent logs in the follower
+            - it will then update all entries from the leader to the follower
+        - this process can be optimized by the follower sending the first index and term that it has
+        in the rejection message
+            - this will allow one message per term instead of one per index
+    - the leader upholds append only feature for its log (never overwrites any of its entries)
+
+### Log Safety
+- Safety of data where a follower crashes and a leader replicates and changes state
+    - then when the crashed follower comesback it might become the leader and overwrite these entries
+    - this could lead to inconsistent state if any leader does not have the commited state of previous
+    leaders
+- need a property called leader completeness property to hold 
+    - ever new leader has all commited log entries commited in its state up until that point
+- This can be implemented using
+    - Election restriction
+        - usual algorithms allow lagging leaders to receive the entries that are missing 
+        and makes them update themselves if such a scenario happens
+        - raft garuntees opposite where any leader must have all commited entries 
+        at the time of election
+        - it does this by not allowing candidates to exist that dont have all log 
+        entries commited
+        - The RequestVote message implements this restriction
+            - if the current the votes log is more uptodate than the leaders
+            log then it rejects the vote request
+- Committing from a previous term
+    - 
+        
+
