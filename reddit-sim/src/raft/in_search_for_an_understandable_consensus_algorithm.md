@@ -213,7 +213,7 @@ it didnt receive all replica confirmations before crashing
     - then when the crashed follower comesback it might become the leader and overwrite these entries
     - this could lead to inconsistent state if any leader does not have the commited state of previous
     leaders
-- need a property called leader completeness property to hold 
+- need a property called Leader Completeness property to hold 
     - ever new leader has all commited log entries commited in its state up until that point
 - This can be implemented using
     - Election restriction
@@ -227,6 +227,27 @@ it didnt receive all replica confirmations before crashing
             - if the current the votes log is more uptodate than the leaders
             log then it rejects the vote request
 - Committing from a previous term
-    - 
-        
-
+    - if a leader crashes before committing an entry future leaders will try to commit that entry
+    - a leader cannot determine committment using log entries
+        - to overcome this raft never commits entries from previous terms by counting replicas
+    - only log entries from the leaders current term are committed by counting replicas
+    - instead of determining if a log is commited by checking if all servers have committed 
+    raft moves the to check to the append time
+        - If a leader tries to replicate entries from a previous term then it must 
+        do so with its new term number
+        - this avoids sending over redundant entries
+- Follower and Candidate crashes
+    - retry failed RequestVote and AppendEntries messages indefinetly 
+    - raft rpcs are idempotent so dedupping happens automatically
+- Timing and availability
+    - safety does not depend on timing
+    - any incorrect answers must not occur because something happens later or faster than expected
+    - only availability depends on timing
+        - trading availability for consistency
+    - raft cannot make progress without a steady leader
+    - timing requirment
+        - broadcastTime << electionTimeout << MTBF
+    - electionTimeout and MBTF are consequences of the system
+        - electionTimeout is chosen and MTBF is usually several months depending on hardware
+        - broadcast time is dependent on how long it actually takes to read logs in the 
+        worst case which is based on the read and write times of storage devices
