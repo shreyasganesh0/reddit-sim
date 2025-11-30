@@ -1,0 +1,41 @@
+pub fn start() {
+
+    actor.new_with_initialiser(1000, fn (sub) {init(sub)})
+    |> actor.on_message(handle_raft)
+    |> actor.start
+}
+
+fn init(
+    sub: process.Subject(RaftMessage)
+    ) -> Result(actor.Initialised(RaftState, RaftMessage, process.Subject(RaftMessage)), String) {
+
+    let init_state = RaftState(
+        self_sub: sub,
+    )
+    let res = actor.initiased(init_state)
+
+    Ok(res)
+}
+
+fn handle_raft(
+    state: RaftState,
+    msg: RaftMessage,
+    ) -> actor.Next(RaftState, RaftMessage) {
+
+    case msg {
+
+        AppendEntries(
+            term,
+            leader_id,
+            prev_log_idx,
+            prev_log_term
+
+        ) -> {
+
+        }
+
+        RequestVote -> {
+
+        }
+    }
+}

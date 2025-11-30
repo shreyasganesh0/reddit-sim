@@ -205,7 +205,8 @@ fn parse_line(line: String, state: response_handlers.ReplState) -> Result(
                                 ..state,
                                 priv_key: priv_key.pem,
                                 pub_key: pub_key.pem,
-                                user_name: username
+                                user_name: username,
+
                             )
                             Ok(
                                 #(

@@ -261,7 +261,7 @@ pub fn create_post(resp: response.Response(BitArray), state: ReplState) -> ReplS
             io.println("[CLIENT]: created post with id "<>post_id)
             ReplState(
                 ..state,
-                posts: [post_id, ..state.posts]
+                posts: [post_id, ..state.posts],
             )
         }
 
@@ -331,6 +331,7 @@ pub fn get_post(resp: response.Response(BitArray), state: ReplState) -> ReplStat
                     display_post(post, comments)
                     ReplState(
                         ..state,
+                        posts: [post.id, ..state.posts],
                         posts_data: dict.insert(state.posts_data, post.id, post)
                     )
                 }
@@ -434,6 +435,7 @@ pub fn get_feed(resp: response.Response(BitArray), state: ReplState) -> ReplStat
                             ReplState(
                                 ..state,
                                 subreddits: [post.subreddit_id, ..state.subreddits],
+                                posts: [post.id, ..state.posts],
                                 posts_data: dict.insert(
                                                 state.posts_data,
                                                 post.id,
@@ -505,6 +507,7 @@ pub fn get_subredditfeed(resp: response.Response(BitArray), state: ReplState) ->
                             ReplState(
                                 ..state,
                                 subreddits: [post.subreddit_id, ..state.subreddits],
+                                posts: [post.id, ..state.posts],
                                 posts_data: dict.insert(
                                                 state.posts_data,
                                                 post.id,
