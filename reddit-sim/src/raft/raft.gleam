@@ -1,3 +1,22 @@
+type RaftMessage {
+
+    AppendEntries(
+        term: Int,
+        leader_id: Int,
+        prev_log_idx: Int,
+        prev_log_term: Int,
+        entries: Int,
+        leader_commit: Int
+    )
+    
+    RequestVote(
+        term: Int,
+        candidate_id: Int,
+        prev_log_idx: Int,
+        prev_log_term: Int,
+    )
+}
+
 pub fn start() {
 
     actor.new_with_initialiser(1000, fn (sub) {init(sub)})
@@ -28,8 +47,9 @@ fn handle_raft(
             term,
             leader_id,
             prev_log_idx,
-            prev_log_term
-
+            prev_log_term,
+            entries,
+            leader_commit
         ) -> {
 
         }
